@@ -259,56 +259,56 @@ enum DisputeStatus {
 }
 
 model User {
-  id                String              @id @default(uuid())
+  id                String     @id @default(uuid())
   email             String?
   emailVerifiedAt   DateTime?
   phone             String?
   phoneVerifiedAt   DateTime?
   pinHash           String?
-  failedPinAttempts Int                 @default(0)
+  failedPinAttempts Int        @default(0)
   pinLockedUntil    DateTime?
   name              String?
-  languagePref      String              @default("en")
-  status            UserStatus          @default(ACTIVE)
+  languagePref      String     @default("en")
+  status            UserStatus @default(ACTIVE)
   metadata          Json?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
-  roles             UserRole[]
-  sessions          UserSession[]
-  farmerProfile     FarmerProfile?
-  buyerProfile      BuyerProfile?
-  bankAccounts      BankAccount[]
-  addresses         Address[]
-  staffAssignments  HubStaffAssignment[]
-  produceListings   ProduceListing[]
-  supplyTokens      SupplyToken[]
-  goodsReceiptNotes GoodsReceiptNote[]
-  operatedGrns      GoodsReceiptNote[]   @relation("GrnOperator")
-  orders            Order[]
-  inspectedReturns  OrderReturn[]        @relation("ReturnInspector")
-  addedCharges      TransactionCharge[]  @relation("ChargeAddedBy")
-  cashAccounts      CashAccount[]        @relation("CashAccountOwner")
-  initiatedTransfers CashTransfer[]      @relation("TransferInitiator")
-  confirmedTransfers CashTransfer[]      @relation("TransferConfirmer")
-  approvedPayouts   FarmerPayout[]       @relation("PayoutApprover")
-  farmerPayouts     FarmerPayout[]       @relation("FarmerPayoutRecipient")
-  cart              Cart?
-  documents         UserDocument[]       @relation("UserDocuments")
-  verifiedDocuments UserDocument[]       @relation("DocumentVerifier")
-  deviceTokens      DeviceToken[]
-  notifications     Notification[]
-  auditLogs         AuditLog[]           @relation("AuditActor")
-  disputesRaised    Dispute[]            @relation("DisputeRaiser")
-  disputesResolved  Dispute[]            @relation("DisputeResolver")
-  operatedLedgers   InventoryLedger[]    @relation("LedgerOperator")
+  roles              UserRole[]
+  sessions           UserSession[]
+  farmerProfile      FarmerProfile?
+  buyerProfile       BuyerProfile?
+  bankAccounts       BankAccount[]
+  addresses          Address[]
+  staffAssignments   HubStaffAssignment[]
+  produceListings    ProduceListing[]
+  supplyTokens       SupplyToken[]
+  goodsReceiptNotes  GoodsReceiptNote[]
+  operatedGrns       GoodsReceiptNote[]   @relation("GrnOperator")
+  orders             Order[]
+  inspectedReturns   OrderReturn[]        @relation("ReturnInspector")
+  addedCharges       TransactionCharge[]  @relation("ChargeAddedBy")
+  cashAccounts       CashAccount[]        @relation("CashAccountOwner")
+  initiatedTransfers CashTransfer[]       @relation("TransferInitiator")
+  confirmedTransfers CashTransfer[]       @relation("TransferConfirmer")
+  approvedPayouts    FarmerPayout[]       @relation("PayoutApprover")
+  farmerPayouts      FarmerPayout[]       @relation("FarmerPayoutRecipient")
+  cart               Cart?
+  documents          UserDocument[]       @relation("UserDocuments")
+  verifiedDocuments  UserDocument[]       @relation("DocumentVerifier")
+  deviceTokens       DeviceToken[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]           @relation("AuditActor")
+  disputesRaised     Dispute[]            @relation("DisputeRaiser")
+  disputesResolved   Dispute[]            @relation("DisputeResolver")
+  operatedLedgers    InventoryLedger[]    @relation("LedgerOperator")
 
   @@index([email])
   @@index([phone])
 }
 
 model UserSession {
-  id               String       @id @default(uuid())
+  id               String    @id @default(uuid())
   userId           String
   refreshTokenHash String
   activeRole       RoleType
@@ -317,10 +317,10 @@ model UserSession {
   expiresAt        DateTime
   revokedAt        DateTime?
   metadata         Json?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, revokedAt])
   @@index([refreshTokenHash])
@@ -333,28 +333,28 @@ model UserRole {
   metadata  Json?
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, role])
   @@index([role])
 }
 
 model FarmerProfile {
-  id            String     @id @default(uuid())
-  userId        String     @unique
+  id            String    @id @default(uuid())
+  userId        String    @unique
   fatherName    String?
   village       String?
   tehsilOrBlock String?
   district      String?
   state         String?
   pinCode       String?
-  landAreaAcres Decimal?   @db.Decimal(8, 2)
-  kycStatus     KycStatus  @default(PENDING)
+  landAreaAcres Decimal?  @db.Decimal(8, 2)
+  kycStatus     KycStatus @default(PENDING)
   metadata      Json?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model BuyerProfile {
@@ -369,34 +369,34 @@ model BuyerProfile {
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
-  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model BankAccount {
-  id                String         @id @default(uuid())
+  id                String   @id @default(uuid())
   userId            String
   accountHolderName String
   accountNumber     String
   ifscCode          String
   bankName          String?
   branchName        String?
-  isVerified        Boolean        @default(false)
-  isDefault         Boolean        @default(false)
+  isVerified        Boolean  @default(false)
+  isDefault         Boolean  @default(false)
   metadata          Json?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  payouts           FarmerPayout[]
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payouts FarmerPayout[]
 
   @@index([userId])
 }
 
 model Address {
-  id            String                                @id @default(uuid())
+  id            String                                 @id @default(uuid())
   userId        String
-  label         AddressLabel                          @default(HOME)
-  isDefault     Boolean                               @default(false)
+  label         AddressLabel                           @default(HOME)
+  isDefault     Boolean                                @default(false)
   contactName   String
   contactPhone  String
   addressLine1  String
@@ -407,16 +407,16 @@ model Address {
   district      String
   state         String
   pinCode       String
-  country       String                                @default("IN")
-  latitude      Decimal?                              @db.Decimal(10, 7)
-  longitude     Decimal?                              @db.Decimal(10, 7)
+  country       String                                 @default("IN")
+  latitude      Decimal?                               @db.Decimal(10, 7)
+  longitude     Decimal?                               @db.Decimal(10, 7)
   location      Unsupported("geography(Point, 4326)")?
   metadata      Json?
-  createdAt     DateTime                              @default(now())
-  updatedAt     DateTime                              @updatedAt
+  createdAt     DateTime                               @default(now())
+  updatedAt     DateTime                               @updatedAt
 
-  user          User                                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orders        Order[]
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders          Order[]
   produceListings ProduceListing[]
 
   @@index([userId])
@@ -440,35 +440,35 @@ model OtpVerification {
 }
 
 model KtsHub {
-  id               String                                @id @default(uuid())
-  code             String                                @unique
-  name             String
-  translations     Json
-  addressLine      String
-  cityOrTown       String
-  district         String
-  state            String
-  pinCode          String
-  contactPhone     String?
-  operatingHours   String?
-  isActive         Boolean                               @default(true)
-  latitude         Decimal                               @db.Decimal(10, 7)
-  longitude        Decimal                               @db.Decimal(10, 7)
-  location         Unsupported("geography(Point, 4326)")?
-  metadata         Json?
-  createdAt        DateTime                              @default(now())
-  updatedAt        DateTime                              @updatedAt
+  id             String                                 @id @default(uuid())
+  code           String                                 @unique
+  name           String
+  translations   Json
+  addressLine    String
+  cityOrTown     String
+  district       String
+  state          String
+  pinCode        String
+  contactPhone   String?
+  operatingHours String?
+  isActive       Boolean                                @default(true)
+  latitude       Decimal                                @db.Decimal(10, 7)
+  longitude      Decimal                                @db.Decimal(10, 7)
+  location       Unsupported("geography(Point, 4326)")?
+  metadata       Json?
+  createdAt      DateTime                               @default(now())
+  updatedAt      DateTime                               @updatedAt
 
-  staffAssignments HubStaffAssignment[]
-  inventories      HubInventory[]
-  inventoryLedgers InventoryLedger[]
-  mandiRates       MandiRate[]
-  supplyTokens     SupplyToken[]
+  staffAssignments  HubStaffAssignment[]
+  inventories       HubInventory[]
+  inventoryLedgers  InventoryLedger[]
+  mandiRates        MandiRate[]
+  supplyTokens      SupplyToken[]
   goodsReceiptNotes GoodsReceiptNote[]
-  orders           Order[]
-  preBookBatches   PreBookBatch[]
-  cashAccounts     CashAccount[]
-  cartItems        CartItem[]
+  orders            Order[]
+  preBookBatches    PreBookBatch[]
+  cashAccounts      CashAccount[]
+  cartItems         CartItem[]
 
   @@index([location], type: Gist)
 }
@@ -483,8 +483,8 @@ model HubStaffAssignment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  hub       KtsHub   @relation(fields: [hubId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hub  KtsHub @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  user User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([hubId, userId, role])
   @@index([userId])
@@ -503,44 +503,44 @@ model Category {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  crops        Crop[]
+  crops Crop[]
 }
 
 model Crop {
-  id                         String         @id @default(uuid())
-  categoryId                 String
-  slug                       String         @unique
-  name                       String
-  translations               Json
-  botanicalName              String?
-  baseUnit                   QuantityUnit   @default(KG)
-  unitConversions            Json?
-  standardMoistureThreshold  Decimal?       @db.Decimal(5, 2)
-  imageUrl                   String?
-  isActive                   Boolean        @default(true)
-  metadata                   Json?
-  createdAt                  DateTime       @default(now())
-  updatedAt                  DateTime       @updatedAt
+  id                        String       @id @default(uuid())
+  categoryId                String
+  slug                      String       @unique
+  name                      String
+  translations              Json
+  botanicalName             String?
+  baseUnit                  QuantityUnit @default(KG)
+  unitConversions           Json?
+  standardMoistureThreshold Decimal?     @db.Decimal(5, 2)
+  imageUrl                  String?
+  isActive                  Boolean      @default(true)
+  metadata                  Json?
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @updatedAt
 
-  category                   Category       @relation(fields: [categoryId], references: [id])
-  varieties                  CropVariety[]
+  category  Category      @relation(fields: [categoryId], references: [id])
+  varieties CropVariety[]
 
   @@index([categoryId])
 }
 
 model CropVariety {
-  id                String             @id @default(uuid())
-  cropId            String
-  slug              String             @unique
-  name              String
-  translations      Json
-  unitConversions   Json?
-  gradeSpecs        Json?
-  imageUrl          String?
-  isActive          Boolean            @default(true)
-  metadata          Json?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  id              String   @id @default(uuid())
+  cropId          String
+  slug            String   @unique
+  name            String
+  translations    Json
+  unitConversions Json?
+  gradeSpecs      Json?
+  imageUrl        String?
+  isActive        Boolean  @default(true)
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   crop              Crop               @relation(fields: [cropId], references: [id])
   mandiRates        MandiRate[]
@@ -573,8 +573,8 @@ model MandiRate {
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
-  hub                 KtsHub?      @relation(fields: [hubId], references: [id])
-  cropVariety         CropVariety  @relation(fields: [cropVarietyId], references: [id])
+  hub         KtsHub?     @relation(fields: [hubId], references: [id])
+  cropVariety CropVariety @relation(fields: [cropVarietyId], references: [id])
 
   @@index([hubId, cropVarietyId, grade, rateDate])
   @@index([cropVarietyId, rateDate])
@@ -596,10 +596,10 @@ model ProduceListing {
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
 
-  farmer            User                 @relation(fields: [farmerId], references: [id])
-  cropVariety       CropVariety          @relation(fields: [cropVarietyId], references: [id])
-  farmAddress       Address?             @relation(fields: [farmAddressId], references: [id])
-  supplyTokens      SupplyToken[]
+  farmer       User          @relation(fields: [farmerId], references: [id])
+  cropVariety  CropVariety   @relation(fields: [cropVarietyId], references: [id])
+  farmAddress  Address?      @relation(fields: [farmAddressId], references: [id])
+  supplyTokens SupplyToken[]
 
   @@index([farmerId])
 }
@@ -627,57 +627,57 @@ model SupplyToken {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
-  farmer            User              @relation(fields: [farmerId], references: [id])
-  produceListing    ProduceListing?   @relation(fields: [produceListingId], references: [id])
-  hub               KtsHub            @relation(fields: [hubId], references: [id])
-  cropVariety       CropVariety       @relation(fields: [cropVarietyId], references: [id])
-  goodsReceiptNote  GoodsReceiptNote?
-  charges           TransactionCharge[]
+  farmer           User                @relation(fields: [farmerId], references: [id])
+  produceListing   ProduceListing?     @relation(fields: [produceListingId], references: [id])
+  hub              KtsHub              @relation(fields: [hubId], references: [id])
+  cropVariety      CropVariety         @relation(fields: [cropVarietyId], references: [id])
+  goodsReceiptNote GoodsReceiptNote?
+  charges          TransactionCharge[]
 
   @@index([farmerId])
   @@index([hubId, slotDate])
 }
 
 model GoodsReceiptNote {
-  id                          String              @id @default(uuid())
-  grnNumber                   String              @unique
-  supplyTokenId               String              @unique
-  hubId                       String
-  farmerId                    String
-  cropVarietyId               String
-  assignedGrade               QualityGrade
-  grossWeight                 Decimal             @db.Decimal(12, 2)
-  tareWeight                  Decimal             @db.Decimal(12, 2)
-  netWeight                   Decimal             @db.Decimal(12, 2)
-  measuredMoisture            Decimal?            @db.Decimal(5, 2)
-  moistureDeductionWeight     Decimal             @default(0) @db.Decimal(12, 2)
-  foreignMatterDeductionWeight Decimal            @default(0) @db.Decimal(12, 2)
-  netBillableWeight           Decimal             @db.Decimal(12, 2)
-  weightUnit                  QuantityUnit        @default(KG)
-  displayUnit                 QuantityUnit?
-  displayQuantity             Decimal?            @db.Decimal(12, 2)
-  appliedRatePerUnit          Decimal             @db.Decimal(12, 2)
-  grossAmount                 Decimal             @db.Decimal(14, 2)
-  deductionAmount             Decimal             @default(0) @db.Decimal(14, 2)
-  netPayableAmount            Decimal             @db.Decimal(14, 2)
-  fifoAllocatedWeight         Decimal             @default(0) @db.Decimal(12, 2)
-  totalPaidAmount             Decimal             @default(0) @db.Decimal(14, 2)
-  paymentStatus               GrnPaymentStatus    @default(UNPAID)
-  operatorUserId              String
-  issuedAt                    DateTime            @default(now())
-  metadata                    Json?
-  createdAt                   DateTime            @default(now())
-  updatedAt                   DateTime            @updatedAt
+  id                           String           @id @default(uuid())
+  grnNumber                    String           @unique
+  supplyTokenId                String           @unique
+  hubId                        String
+  farmerId                     String
+  cropVarietyId                String
+  assignedGrade                QualityGrade
+  grossWeight                  Decimal          @db.Decimal(12, 2)
+  tareWeight                   Decimal          @db.Decimal(12, 2)
+  netWeight                    Decimal          @db.Decimal(12, 2)
+  measuredMoisture             Decimal?         @db.Decimal(5, 2)
+  moistureDeductionWeight      Decimal          @default(0) @db.Decimal(12, 2)
+  foreignMatterDeductionWeight Decimal          @default(0) @db.Decimal(12, 2)
+  netBillableWeight            Decimal          @db.Decimal(12, 2)
+  weightUnit                   QuantityUnit     @default(KG)
+  displayUnit                  QuantityUnit?
+  displayQuantity              Decimal?         @db.Decimal(12, 2)
+  appliedRatePerUnit           Decimal          @db.Decimal(12, 2)
+  grossAmount                  Decimal          @db.Decimal(14, 2)
+  deductionAmount              Decimal          @default(0) @db.Decimal(14, 2)
+  netPayableAmount             Decimal          @db.Decimal(14, 2)
+  fifoAllocatedWeight          Decimal          @default(0) @db.Decimal(12, 2)
+  totalPaidAmount              Decimal          @default(0) @db.Decimal(14, 2)
+  paymentStatus                GrnPaymentStatus @default(UNPAID)
+  operatorUserId               String
+  issuedAt                     DateTime         @default(now())
+  metadata                     Json?
+  createdAt                    DateTime         @default(now())
+  updatedAt                    DateTime         @updatedAt
 
-  supplyToken                 SupplyToken         @relation(fields: [supplyTokenId], references: [id])
-  hub                         KtsHub              @relation(fields: [hubId], references: [id])
-  farmer                      User                @relation(fields: [farmerId], references: [id])
-  cropVariety                 CropVariety         @relation(fields: [cropVarietyId], references: [id])
-  operator                    User                @relation("GrnOperator", fields: [operatorUserId], references: [id])
-  transactionCharges          TransactionCharge[]
-  farmerPayouts               FarmerPayout[]
-  inventoryLedgers            InventoryLedger[]
-  disputes                    Dispute[]
+  supplyToken        SupplyToken         @relation(fields: [supplyTokenId], references: [id])
+  hub                KtsHub              @relation(fields: [hubId], references: [id])
+  farmer             User                @relation(fields: [farmerId], references: [id])
+  cropVariety        CropVariety         @relation(fields: [cropVarietyId], references: [id])
+  operator           User                @relation("GrnOperator", fields: [operatorUserId], references: [id])
+  transactionCharges TransactionCharge[]
+  farmerPayouts      FarmerPayout[]
+  inventoryLedgers   InventoryLedger[]
+  disputes           Dispute[]
 
   @@index([farmerId])
   @@index([hubId, issuedAt])
@@ -696,8 +696,8 @@ model HubInventory {
   createdAt               DateTime     @default(now())
   updatedAt               DateTime     @updatedAt
 
-  hub                     KtsHub       @relation(fields: [hubId], references: [id])
-  cropVariety             CropVariety  @relation(fields: [cropVarietyId], references: [id])
+  hub         KtsHub      @relation(fields: [hubId], references: [id])
+  cropVariety CropVariety @relation(fields: [cropVarietyId], references: [id])
 
   @@unique([hubId, cropVarietyId, grade])
   @@index([cropVarietyId, grade])
@@ -720,12 +720,12 @@ model InventoryLedger {
   metadata        Json?
   createdAt       DateTime                 @default(now())
 
-  hub             KtsHub                   @relation(fields: [hubId], references: [id])
-  cropVariety     CropVariety              @relation(fields: [cropVarietyId], references: [id])
-  grn             GoodsReceiptNote?        @relation(fields: [grnId], references: [id])
-  order           Order?                   @relation(fields: [orderId], references: [id])
-  orderReturn     OrderReturn?             @relation(fields: [orderReturnId], references: [id])
-  operator        User?                    @relation("LedgerOperator", fields: [operatorUserId], references: [id])
+  hub         KtsHub            @relation(fields: [hubId], references: [id])
+  cropVariety CropVariety       @relation(fields: [cropVarietyId], references: [id])
+  grn         GoodsReceiptNote? @relation(fields: [grnId], references: [id])
+  order       Order?            @relation(fields: [orderId], references: [id])
+  orderReturn OrderReturn?      @relation(fields: [orderReturnId], references: [id])
+  operator    User?             @relation("LedgerOperator", fields: [operatorUserId], references: [id])
 
   @@index([hubId, cropVarietyId, grade])
   @@index([grnId])
@@ -733,101 +733,101 @@ model InventoryLedger {
 }
 
 model Order {
-  id                 String            @id @default(uuid())
-  orderNumber        String            @unique
-  buyerId            String
-  hubId              String
-  status             OrderStatus       @default(PLACED)
-  fulfillmentType    FulfillmentType   @default(KTC_DELIVERY)
-  deliveryAddressId  String?
-  subtotalAmount     Decimal           @db.Decimal(14, 2)
-  chargesAmount      Decimal           @default(0) @db.Decimal(14, 2)
-  totalAmount        Decimal           @db.Decimal(14, 2)
-  paymentMethod      PaymentMethod     @default(CASH)
-  paymentStatus      PaymentStatus     @default(PENDING)
-  cancelReason       String?
-  cancelledAt        DateTime?
-  deliveredAt        DateTime?
-  metadata           Json?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  id                String          @id @default(uuid())
+  orderNumber       String          @unique
+  buyerId           String
+  hubId             String
+  status            OrderStatus     @default(PLACED)
+  fulfillmentType   FulfillmentType @default(KTC_DELIVERY)
+  deliveryAddressId String?
+  subtotalAmount    Decimal         @db.Decimal(14, 2)
+  chargesAmount     Decimal         @default(0) @db.Decimal(14, 2)
+  totalAmount       Decimal         @db.Decimal(14, 2)
+  paymentMethod     PaymentMethod   @default(CASH)
+  paymentStatus     PaymentStatus   @default(PENDING)
+  cancelReason      String?
+  cancelledAt       DateTime?
+  deliveredAt       DateTime?
+  metadata          Json?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
-  buyer              User              @relation(fields: [buyerId], references: [id])
-  hub                KtsHub            @relation(fields: [hubId], references: [id])
-  deliveryAddress    Address?          @relation(fields: [deliveryAddressId], references: [id])
-  items              OrderItem[]
-  charges            TransactionCharge[]
-  returns            OrderReturn[]
-  cashTransfers      CashTransfer[]
-  inventoryLedgers   InventoryLedger[]
-  disputes           Dispute[]
+  buyer            User                @relation(fields: [buyerId], references: [id])
+  hub              KtsHub              @relation(fields: [hubId], references: [id])
+  deliveryAddress  Address?            @relation(fields: [deliveryAddressId], references: [id])
+  items            OrderItem[]
+  charges          TransactionCharge[]
+  returns          OrderReturn[]
+  cashTransfers    CashTransfer[]
+  inventoryLedgers InventoryLedger[]
+  disputes         Dispute[]
 
   @@index([buyerId])
   @@index([hubId, status])
 }
 
 model OrderItem {
-  id              String              @id @default(uuid())
-  orderId         String
-  cropVarietyId   String
-  preBookBatchId  String?
-  grade           QualityGrade
-  quantity        Decimal             @db.Decimal(12, 2)
-  unit            QuantityUnit
-  unitPrice       Decimal             @db.Decimal(12, 2)
-  subtotal        Decimal             @db.Decimal(14, 2)
-  metadata        Json?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  id             String       @id @default(uuid())
+  orderId        String
+  cropVarietyId  String
+  preBookBatchId String?
+  grade          QualityGrade
+  quantity       Decimal      @db.Decimal(12, 2)
+  unit           QuantityUnit
+  unitPrice      Decimal      @db.Decimal(12, 2)
+  subtotal       Decimal      @db.Decimal(14, 2)
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  order           Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  cropVariety     CropVariety         @relation(fields: [cropVarietyId], references: [id])
-  preBookBatch    PreBookBatch?       @relation(fields: [preBookBatchId], references: [id])
-  charges         TransactionCharge[]
-  returns         OrderReturn[]
+  order        Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  cropVariety  CropVariety         @relation(fields: [cropVarietyId], references: [id])
+  preBookBatch PreBookBatch?       @relation(fields: [preBookBatchId], references: [id])
+  charges      TransactionCharge[]
+  returns      OrderReturn[]
 
   @@index([orderId])
   @@index([preBookBatchId])
 }
 
 model PreBookBatch {
-  id                  String       @id @default(uuid())
-  cropVarietyId       String
-  hubId               String?
-  targetPricePerUnit  Decimal      @db.Decimal(12, 2)
-  unit                QuantityUnit @default(KG)
-  batchDate           DateTime     @db.Date
-  description         String?
-  discountPercent     Decimal?     @db.Decimal(5, 2)
-  maxQuantity         Decimal?     @db.Decimal(14, 2)
-  bookedQuantity      Decimal      @default(0) @db.Decimal(14, 2)
-  isActive            Boolean      @default(true)
-  metadata            Json?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  id                 String       @id @default(uuid())
+  cropVarietyId      String
+  hubId              String?
+  targetPricePerUnit Decimal      @db.Decimal(12, 2)
+  unit               QuantityUnit @default(KG)
+  batchDate          DateTime     @db.Date
+  description        String?
+  discountPercent    Decimal?     @db.Decimal(5, 2)
+  maxQuantity        Decimal?     @db.Decimal(14, 2)
+  bookedQuantity     Decimal      @default(0) @db.Decimal(14, 2)
+  isActive           Boolean      @default(true)
+  metadata           Json?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
-  cropVariety         CropVariety  @relation(fields: [cropVarietyId], references: [id])
-  hub                 KtsHub?      @relation(fields: [hubId], references: [id])
-  orderItems          OrderItem[]
+  cropVariety CropVariety @relation(fields: [cropVarietyId], references: [id])
+  hub         KtsHub?     @relation(fields: [hubId], references: [id])
+  orderItems  OrderItem[]
 }
 
 model OrderReturn {
-  id                 String          @id @default(uuid())
-  orderId            String
-  orderItemId        String
-  quantity           Decimal         @db.Decimal(12, 2)
-  unit               QuantityUnit
-  reason             String
-  condition          ReturnCondition
-  inspectedByUserId  String
-  notes              String?
-  metadata           Json?
-  createdAt          DateTime        @default(now())
+  id                String          @id @default(uuid())
+  orderId           String
+  orderItemId       String
+  quantity          Decimal         @db.Decimal(12, 2)
+  unit              QuantityUnit
+  reason            String
+  condition         ReturnCondition
+  inspectedByUserId String
+  notes             String?
+  metadata          Json?
+  createdAt         DateTime        @default(now())
 
-  order              Order           @relation(fields: [orderId], references: [id])
-  orderItem          OrderItem       @relation(fields: [orderItemId], references: [id])
-  inspector          User            @relation("ReturnInspector", fields: [inspectedByUserId], references: [id])
-  inventoryLedgers   InventoryLedger[]
+  order            Order             @relation(fields: [orderId], references: [id])
+  orderItem        OrderItem         @relation(fields: [orderItemId], references: [id])
+  inspector        User              @relation("ReturnInspector", fields: [inspectedByUserId], references: [id])
+  inventoryLedgers InventoryLedger[]
 
   @@index([orderId])
 }
@@ -869,12 +869,12 @@ model TransactionCharge {
   metadata           Json?
   createdAt          DateTime              @default(now())
 
-  chargeDefinition   ChargeDefinition      @relation(fields: [chargeDefinitionId], references: [id])
-  supplyToken        SupplyToken?          @relation(fields: [supplyTokenId], references: [id])
-  grn                GoodsReceiptNote?     @relation(fields: [grnId], references: [id])
-  order              Order?                @relation(fields: [orderId], references: [id])
-  orderItem          OrderItem?            @relation(fields: [orderItemId], references: [id])
-  addedBy            User?                 @relation("ChargeAddedBy", fields: [addedByUserId], references: [id])
+  chargeDefinition ChargeDefinition  @relation(fields: [chargeDefinitionId], references: [id])
+  supplyToken      SupplyToken?      @relation(fields: [supplyTokenId], references: [id])
+  grn              GoodsReceiptNote? @relation(fields: [grnId], references: [id])
+  order            Order?            @relation(fields: [orderId], references: [id])
+  orderItem        OrderItem?        @relation(fields: [orderItemId], references: [id])
+  addedBy          User?             @relation("ChargeAddedBy", fields: [addedByUserId], references: [id])
 
   @@index([supplyTokenId])
   @@index([grnId])
@@ -883,21 +883,21 @@ model TransactionCharge {
 }
 
 model CashAccount {
-  id            String          @id @default(uuid())
-  type          CashAccountType
-  ownerUserId   String?
-  hubId         String?
-  balance       Decimal         @default(0) @db.Decimal(14, 2)
-  currency      String          @default("INR")
-  isActive      Boolean         @default(true)
-  metadata      Json?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id          String          @id @default(uuid())
+  type        CashAccountType
+  ownerUserId String?
+  hubId       String?
+  balance     Decimal         @default(0) @db.Decimal(14, 2)
+  currency    String          @default("INR")
+  isActive    Boolean         @default(true)
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
-  owner         User?           @relation("CashAccountOwner", fields: [ownerUserId], references: [id])
-  hub           KtsHub?         @relation(fields: [hubId], references: [id])
-  transfersFrom CashTransfer[]  @relation("FromAccount")
-  transfersTo   CashTransfer[]  @relation("ToAccount")
+  owner         User?          @relation("CashAccountOwner", fields: [ownerUserId], references: [id])
+  hub           KtsHub?        @relation(fields: [hubId], references: [id])
+  transfersFrom CashTransfer[] @relation("FromAccount")
+  transfersTo   CashTransfer[] @relation("ToAccount")
 
   @@index([ownerUserId])
   @@index([hubId, type])
@@ -923,13 +923,13 @@ model CashTransfer {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
-  fromAccount       CashAccount        @relation("FromAccount", fields: [fromAccountId], references: [id])
-  toAccount         CashAccount        @relation("ToAccount", fields: [toAccountId], references: [id])
-  initiatedBy       User               @relation("TransferInitiator", fields: [initiatedByUserId], references: [id])
-  confirmedBy       User?              @relation("TransferConfirmer", fields: [confirmedByUserId], references: [id])
-  order             Order?             @relation(fields: [orderId], references: [id])
-  payout            FarmerPayout?      @relation(fields: [payoutId], references: [id])
-  disputes          Dispute[]
+  fromAccount CashAccount   @relation("FromAccount", fields: [fromAccountId], references: [id])
+  toAccount   CashAccount   @relation("ToAccount", fields: [toAccountId], references: [id])
+  initiatedBy User          @relation("TransferInitiator", fields: [initiatedByUserId], references: [id])
+  confirmedBy User?         @relation("TransferConfirmer", fields: [confirmedByUserId], references: [id])
+  order       Order?        @relation(fields: [orderId], references: [id])
+  payout      FarmerPayout? @relation(fields: [payoutId], references: [id])
+  disputes    Dispute[]
 
   @@index([fromAccountId])
   @@index([toAccountId])
@@ -938,42 +938,42 @@ model CashTransfer {
 }
 
 model FarmerPayout {
-  id                  String           @id @default(uuid())
-  payoutNumber        String           @unique
+  id                  String        @id @default(uuid())
+  payoutNumber        String        @unique
   farmerId            String
   grnId               String
   bankAccountId       String?
-  amount              Decimal          @db.Decimal(14, 2)
-  allocatedWeight     Decimal?         @db.Decimal(12, 2)
+  amount              Decimal       @db.Decimal(14, 2)
+  allocatedWeight     Decimal?      @db.Decimal(12, 2)
   payoutType          PayoutType
-  status              PayoutStatus     @default(INITIATED)
-  paymentMethod       PaymentMethod    @default(CASH)
+  status              PayoutStatus  @default(INITIATED)
+  paymentMethod       PaymentMethod @default(CASH)
   utrOrTransactionRef String?
   approvedByUserId    String?
   notes               String?
   metadata            Json?
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
-  farmer              User             @relation("FarmerPayoutRecipient", fields: [farmerId], references: [id])
-  grn                 GoodsReceiptNote @relation(fields: [grnId], references: [id])
-  bankAccount         BankAccount?     @relation(fields: [bankAccountId], references: [id])
-  approvedBy          User?            @relation("PayoutApprover", fields: [approvedByUserId], references: [id])
-  cashTransfers       CashTransfer[]
+  farmer        User             @relation("FarmerPayoutRecipient", fields: [farmerId], references: [id])
+  grn           GoodsReceiptNote @relation(fields: [grnId], references: [id])
+  bankAccount   BankAccount?     @relation(fields: [bankAccountId], references: [id])
+  approvedBy    User?            @relation("PayoutApprover", fields: [approvedByUserId], references: [id])
+  cashTransfers CashTransfer[]
 
   @@index([farmerId])
   @@index([grnId])
 }
 
 model Cart {
-  id        String     @id @default(uuid())
-  userId    String     @unique
+  id        String   @id @default(uuid())
+  userId    String   @unique
   metadata  Json?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items     CartItem[]
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
 }
 
 model CartItem {
@@ -988,9 +988,9 @@ model CartItem {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  cart          Cart         @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  hub           KtsHub       @relation(fields: [hubId], references: [id])
-  cropVariety   CropVariety  @relation(fields: [cropVarietyId], references: [id])
+  cart        Cart        @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  hub         KtsHub      @relation(fields: [hubId], references: [id])
+  cropVariety CropVariety @relation(fields: [cropVarietyId], references: [id])
 
   @@unique([cartId, hubId, cropVarietyId, grade])
   @@index([cartId])
@@ -1011,8 +1011,8 @@ model UserDocument {
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
-  user             User         @relation("UserDocuments", fields: [userId], references: [id], onDelete: Cascade)
-  verifiedBy       User?        @relation("DocumentVerifier", fields: [verifiedByUserId], references: [id])
+  user       User  @relation("UserDocuments", fields: [userId], references: [id], onDelete: Cascade)
+  verifiedBy User? @relation("DocumentVerifier", fields: [verifiedByUserId], references: [id])
 
   @@index([userId, docType])
 }
@@ -1026,7 +1026,7 @@ model DeviceToken {
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
 
-  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -1042,7 +1042,7 @@ model Notification {
   metadata  Json?
   createdAt DateTime         @default(now())
 
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead])
 }
@@ -1059,15 +1059,15 @@ model AuditLog {
   metadata    Json?
   createdAt   DateTime  @default(now())
 
-  actor       User?     @relation("AuditActor", fields: [actorUserId], references: [id])
+  actor User? @relation("AuditActor", fields: [actorUserId], references: [id])
 
   @@index([entityType, entityId])
   @@index([actorUserId, createdAt])
 }
 
 model Dispute {
-  id               String            @id @default(uuid())
-  disputeNumber    String            @unique
+  id               String          @id @default(uuid())
+  disputeNumber    String          @unique
   raisedByUserId   String
   category         DisputeCategory
   orderId          String?
@@ -1075,19 +1075,19 @@ model Dispute {
   cashTransferId   String?
   description      String
   evidenceR2Keys   String[]
-  status           DisputeStatus     @default(OPEN)
+  status           DisputeStatus   @default(OPEN)
   resolvedByUserId String?
   resolutionNotes  String?
   resolvedAt       DateTime?
   metadata         Json?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
-  raisedBy         User              @relation("DisputeRaiser", fields: [raisedByUserId], references: [id])
-  resolvedBy       User?             @relation("DisputeResolver", fields: [resolvedByUserId], references: [id])
-  order            Order?            @relation(fields: [orderId], references: [id])
-  grn              GoodsReceiptNote? @relation(fields: [grnId], references: [id])
-  cashTransfer     CashTransfer?     @relation(fields: [cashTransferId], references: [id])
+  raisedBy     User              @relation("DisputeRaiser", fields: [raisedByUserId], references: [id])
+  resolvedBy   User?             @relation("DisputeResolver", fields: [resolvedByUserId], references: [id])
+  order        Order?            @relation(fields: [orderId], references: [id])
+  grn          GoodsReceiptNote? @relation(fields: [grnId], references: [id])
+  cashTransfer CashTransfer?     @relation(fields: [cashTransferId], references: [id])
 
   @@index([raisedByUserId])
   @@index([status])

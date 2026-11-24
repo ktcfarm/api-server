@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KTC Mandi Exchange - Complete Interactive Schema & ER Diagram</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    code, pre { font-family: 'JetBrains Mono', monospace; }
+    #network-canvas { width: 100%; height: 100%; background: #0b1120; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 flex flex-col h-screen overflow-hidden">
+
+  <!-- Header -->
+  <header class="h-16 bg-slate-900 border-b border-slate-800 px-6 flex items-center justify-between shrink-0 z-20">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-extrabold text-xl shadow-lg shadow-emerald-950/60">
+        K
+      </div>
+      <div>
+        <h1 class="font-bold text-base md:text-lg leading-tight text-white flex items-center gap-2">
+          KTC Agricultural Marketplace
+          <span class="text-xs bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2 py-0.5 rounded-full font-semibold">Interactive Data Dictionary</span>
+        </h1>
+        <p class="text-xs text-slate-400">Prisma Schema • Column-Level Explanations • Cardinality & Foreign Key Mapper</p>
+      </div>
+    </div>
+
+    <!-- Quick Stats & Actions -->
+    <div class="flex items-center gap-4 md:gap-6 text-xs text-slate-300">
+      <div class="hidden sm:flex items-center gap-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span><strong class="text-white" id="stat-total-models">35</strong> Entities</span>
+      </div>
+      <div class="hidden sm:flex items-center gap-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-cyan-500"></span>
+        <span><strong class="text-white">48</strong> Relational Mappings</span>
+      </div>
+      <button onclick="resetCamera()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition border border-slate-700 flex items-center gap-1.5 shadow-sm">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Fit View
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Viewport -->
+  <div class="flex flex-1 overflow-hidden relative">
+
+    <!-- Left Module Navigation & Search Sidebar -->
+    <aside class="w-72 md:w-80 bg-slate-900/95 border-r border-slate-800 flex flex-col shrink-0 z-10">
+      <!-- Search -->
+      <div class="p-3.5 border-b border-slate-800">
+        <div class="relative">
+          <input 
+            type="text" 
+            id="search-input"
+            placeholder="Search model, column, or FK..."
+            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 pl-9 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+            oninput="handleSearch(this.value)"
+          />
+          <svg class="w-4 h-4 text-slate-500 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        </div>
+      </div>
+
+      <!-- Module Filters -->
+      <div class="flex-1 overflow-y-auto p-3 space-y-1" id="module-filter-list"></div>
+
+      <!-- Settings / Physics -->
+      <div class="p-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between text-xs text-slate-400">
+        <span>Force Simulation</span>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" id="physics-toggle" class="sr-only peer" onchange="togglePhysics(this.checked)">
+          <div class="w-8 h-4 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-600"></div>
+        </label>
+      </div>
+    </aside>
+
+    <!-- Canvas -->
+    <main class="flex-1 relative overflow-hidden">
+      <div id="network-canvas"></div>
+
+      <!-- Hint Overlay -->
+      <div class="absolute bottom-5 left-5 bg-slate-900/90 border border-slate-800 backdrop-blur-md rounded-xl p-3 text-xs space-y-1.5 shadow-xl pointer-events-none">
+        <div class="font-semibold text-slate-300">Interactive Guide</div>
+        <div class="text-slate-400">Click any table node to inspect all its column descriptions and incoming/outgoing relations.</div>
+      </div>
+    </main>
+
+    <!-- Detail Panel -->
+    <aside id="inspector-panel" class="w-[420px] bg-slate-900 border-l border-slate-800 flex flex-col shrink-0 z-10 overflow-hidden shadow-2xl">
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
+        <div>
+          <span id="inspect-module" class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-800 text-slate-400">Module</span>
+          <h2 id="inspect-title" class="text-xl font-bold text-white mt-1">Select an Entity</h2>
+        </div>
+        <button onclick="closeInspector()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="p-4 border-b border-slate-800 bg-slate-950/20 text-xs text-slate-300 leading-relaxed" id="inspect-description">
+        Click on any entity in the network to inspect detailed explanations for every single database column and relational link.
+      </div>
+
+      <!-- Tabs: Columns vs Relations -->
+      <div class="flex border-b border-slate-800 bg-slate-950/50 text-xs font-semibold">
+        <button id="tab-cols-btn" onclick="switchTab('cols')" class="flex-1 py-2.5 text-center text-emerald-400 border-b-2 border-emerald-500">
+          Columns (<span id="cols-count">0</span>)
+        </button>
+        <button id="tab-rels-btn" onclick="switchTab('rels')" class="flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent">
+          Relations (<span id="rels-count">0</span>)
+        </button>
+      </div>
+
+      <!-- Tab Content Area -->
+      <div class="flex-1 overflow-y-auto p-4" id="inspect-tab-content">
+        <!-- Rendered via JS -->
+      </div>
+    </aside>
+
+  </div>
+
+  <script>
+    const modules = [
+      { id: "all", name: "All Modules", color: "#64748b" },
+      { id: "identity", name: "1. Identity, Auth & Profiles", color: "#10b981" },
+      { id: "hubs", name: "2. Hub Infrastructure & Staff", color: "#38bdf8" },
+      { id: "catalog", name: "3. Catalog & Mandi Rates", color: "#a855f7" },
+      { id: "inbound", name: "4. Farmer Inbound & GRN", color: "#f59e0b" },
+      { id: "inventory", name: "5. Pooled Hub Inventory", color: "#06b6d4" },
+      { id: "outbound", name: "6. Orders & Returns", color: "#6366f1" },
+      { id: "pricing", name: "7. Dynamic Charge Engine", color: "#f43f5e" },
+      { id: "cash", name: "8. Cash Virtual Ledger", color: "#14b8a6" },
+      { id: "kyc_audit", name: "9. KYC Vault & Disputes", color: "#8b5cf6" },
+      { id: "cart_notif", name: "10. Cart & Push Alerts", color: "#ec4899" }
+    ];
+
+    const entities = {
+      User: {
+        module: "identity",
+        desc: "Core identity root. Intentionally omits DB @unique constraints on email/phone to allow smooth pre-verification states while enforcing verified uniqueness at the transactional API level.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "email", type: "String? (indexed)", desc: "User's email. Non-unique in DB; uniqueness enforced via service layer once verified." },
+          { name: "emailVerifiedAt", type: "DateTime?", desc: "Timestamp when email was verified via OTP. Active anchor for verified uniqueness." },
+          { name: "phone", type: "String? (indexed)", desc: "User's phone number. Phone verification will be enabled in Phase 2 with zero schema change." },
+          { name: "phoneVerifiedAt", type: "DateTime?", desc: "Timestamp when mobile phone was OTP-verified." },
+          { name: "pinHash", type: "String?", desc: "Bcrypt hash of user's strictly 6-digit numeric login PIN." },
+          { name: "failedPinAttempts", type: "Int (default 0)", desc: "Consecutive incorrect PIN attempts counter." },
+          { name: "pinLockedUntil", type: "DateTime?", desc: "Lockout expiry timestamp (locks for 15 minutes after 5 consecutive failures)." },
+          { name: "name", type: "String?", desc: "User's display or legal name." },
+          { name: "languagePref", type: "String (default 'en')", desc: "Preferred UI language code (e.g., 'en' for English, 'hi' for Hindi)." },
+          { name: "status", type: "UserStatus", desc: "Account status: ACTIVE, SUSPENDED, or DEACTIVATED." },
+          { name: "metadata", type: "Json?", desc: "Extensible custom attributes or auth provider metadata." },
+          { name: "createdAt / updatedAt", type: "DateTime", desc: "Audit creation and modification timestamps." }
+        ]
+      },
+
+      UserSession: {
+        module: "identity",
+        desc: "Persistent Amazon-style multi-device session management storing rotating refresh token hashes and pinned activeRole.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID of the session." },
+          { name: "userId", type: "UUID", fk: "User", desc: "User who owns this session. Cascades on user deletion." },
+          { name: "refreshTokenHash", type: "String (indexed)", desc: "SHA-256 hash of the rotating refresh token string." },
+          { name: "activeRole", type: "RoleType", desc: "The role context locked to this session (BUYER, FARMER, STORE_OPERATOR, etc.)." },
+          { name: "deviceInfo", type: "Json?", desc: "Client platform, user agent, app version, and device model." },
+          { name: "ipAddress", type: "String?", desc: "Client IP address at session creation/refresh." },
+          { name: "expiresAt", type: "DateTime", desc: "Session expiration timestamp (typically 30 days)." },
+          { name: "revokedAt", type: "DateTime?", desc: "Set to timestamp when user logs out or resets PIN; invalidates the token chain immediately." },
+          { name: "metadata", type: "Json?", desc: "Additional session-level diagnostics." }
+        ]
+      },
+
+      UserRole: {
+        module: "identity",
+        desc: "Multi-role bridge table allowing a single identity to possess multiple roles simultaneously (e.g., both BUYER and FARMER).",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "userId", type: "UUID", fk: "User", desc: "User possessing this role." },
+          { name: "role", type: "RoleType", desc: "Assigned role enum: BUYER, FARMER, STORE_OPERATOR, HUB_MANAGER, ADMIN, SUPER_ADMIN." },
+          { name: "metadata", type: "Json?", desc: "Custom role granting notes or permissions." }
+        ]
+      },
+
+      FarmerProfile: {
+        module: "identity",
+        desc: "Progressive profile created when an existing user completes Farmer Onboarding to sell harvests.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "userId", type: "UUID", fk: "User (1:1)", desc: "User identity this profile belongs to." },
+          { name: "fatherName", type: "String?", desc: "Father's name for rural identification & land record matching." },
+          { name: "village", type: "String?", desc: "Village/Gram Panchayat where the farm is located." },
+          { name: "tehsilOrBlock", type: "String?", desc: "Tehsil or Sub-district administrative block." },
+          { name: "district / state / pinCode", type: "String?", desc: "Geographic administrative boundary information." },
+          { name: "landAreaAcres", type: "Decimal(8,2)?", desc: "Total cultivable farmland size owned/leased by the farmer in acres." },
+          { name: "kycStatus", type: "KycStatus", desc: "KYC verification status: PENDING, VERIFIED, or REJECTED." }
+        ]
+      },
+
+      BuyerProfile: {
+        module: "identity",
+        desc: "Default profile provisioned on app registration for farm-direct wholesale or retail purchasing.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "userId", type: "UUID", fk: "User (1:1)", desc: "User identity owning this buyer profile." },
+          { name: "businessName", type: "String?", desc: "Trade name or store/business name (optional for individual buyers)." },
+          { name: "businessType", type: "BuyerBusinessType", desc: "INDIVIDUAL, RETAILER, WHOLESALER, PROCESSOR, or OTHER." },
+          { name: "gstin", type: "String?", desc: "15-digit GST identification number for wholesale tax invoices." },
+          { name: "panNumber", type: "String?", desc: "Permanent Account Number for higher-value trade transactions." },
+          { name: "kycStatus", type: "KycStatus", desc: "Verification state of buyer tax and business credentials." }
+        ]
+      },
+
+      BankAccount: {
+        module: "identity",
+        desc: "Bank account registry used for 2-hour automated farmer harvest payouts via payment gateways/IMPS.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "userId", type: "UUID", fk: "User", desc: "Account holder user ID." },
+          { name: "accountHolderName", type: "String", desc: "Beneficiary name as registered in the bank passbook." },
+          { name: "accountNumber", type: "String", desc: "Bank account number." },
+          { name: "ifscCode", type: "String", desc: "11-character Indian Financial System Code." },
+          { name: "bankName / branchName", type: "String?", desc: "Bank branding and local branch branch details." },
+          { name: "isVerified", type: "Boolean", desc: "Penny-drop or manual document verification status." },
+          { name: "isDefault", type: "Boolean", desc: "Indicates the primary account for receiving farmer harvest proceeds." }
+        ]
+      },
+
+      Address: {
+        module: "identity",
+        desc: "Dual rural farm & urban delivery address model equipped with native PostGIS Point and GiST spatial index.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "userId", type: "UUID", fk: "User", desc: "User who owns this address." },
+          { name: "label", type: "AddressLabel", desc: "FARM, SHOP, HOME, WAREHOUSE, or OTHER." },
+          { name: "contactName / phone", type: "String", desc: "Designated recipient/contact on-site." },
+          { name: "addressLine1 / addressLine2", type: "String", desc: "Street address, plot number, or farm landmark." },
+          { name: "tehsilOrBlock", type: "String?", desc: "Rural administrative subdivision." },
+          { name: "latitude / longitude", type: "Decimal(10,7)?", desc: "Standard decimal GPS coordinates for quick non-spatial reads." },
+          { name: "location", type: "geography(Point, 4326)", desc: "PostGIS spatial point with GiST index for fast <25km ST_DWithin hub discovery." }
+        ]
+      },
+
+      OtpVerification: {
+        module: "identity",
+        desc: "Generic security code table supporting email, SMS, and in-app cash handover verification codes.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "identifier", type: "String (indexed)", desc: "Target email address or phone number." },
+          { name: "channel", type: "OtpChannelType", desc: "Delivery route: EMAIL, SMS, or IN_APP." },
+          { name: "purpose", type: "OtpPurpose", desc: "LOGIN, REGISTER, RESET_PIN, VERIFY_EMAIL, VERIFY_PHONE, or CASH_HANDOVER." },
+          { name: "otpHash", type: "String", desc: "Bcrypt hash of the 6-digit one-time password." },
+          { name: "attempts", type: "Int (default 0)", desc: "Failed entry attempts counter (locked out at maxAttempts)." },
+          { name: "isUsed", type: "Boolean (default false)", desc: "Set to true once validated to prevent replay attacks." },
+          { name: "expiresAt", type: "DateTime", desc: "Strict 10-minute expiry deadline." }
+        ]
+      },
+
+      KtsHub: {
+        module: "hubs",
+        desc: "Physical procurement & delivery facility. Anchors spatial 25km radius queries with GiST indexing.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "code", type: "String (Unique)", desc: "Human-readable code (e.g., 'HUB-SOHNA-01')." },
+          { name: "name", type: "String", desc: "Facility name (e.g., 'KTS Sohna Road Center')." },
+          { name: "translations", type: "Json", desc: "Multilingual display names: { 'en': '...', 'hi': '...' }." },
+          { name: "addressLine / cityOrTown", type: "String", desc: "Physical facility location." },
+          { name: "latitude / longitude", type: "Decimal(10,7)", desc: "GPS coordinates." },
+          { name: "location", type: "geography(Point, 4326)", desc: "PostGIS Point column indexed with GiST for distance matching." },
+          { name: "operatingHours", type: "String?", desc: "Working schedule, e.g., '07:00 AM - 07:00 PM'." }
+        ]
+      },
+
+      HubStaffAssignment: {
+        module: "hubs",
+        desc: "RBAC association restricting Store Operators and Hub Managers to their assigned physical centers.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "hubId", type: "UUID", fk: "KtsHub", desc: "The physical facility the staff member is stationed at." },
+          { name: "userId", type: "UUID", fk: "User", desc: "Staff user identity." },
+          { name: "role", type: "RoleType", desc: "Scoped role: STORE_OPERATOR or HUB_MANAGER." },
+          { name: "isActive", type: "Boolean (default true)", desc: "Staff activation flag." }
+        ]
+      },
+
+      Category: {
+        module: "catalog",
+        desc: "Produce taxonomy root (Grains, Pulses, Veggies, Fruits, Spices) with multilingual JSON.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "slug", type: "String (Unique)", desc: "URL & route slug (e.g., 'grains', 'vegetables')." },
+          { name: "name", type: "String", desc: "Primary name." },
+          { name: "translations", type: "Json", desc: "Multilingual labels: { 'en': 'Grains', 'hi': 'अनाज' }." },
+          { name: "displayOrder", type: "Int", desc: "Position order in mobile category grid." }
+        ]
+      },
+
+      Crop: {
+        module: "catalog",
+        desc: "Base crop definition specifying canonical storage baseUnit (KG or PIECE) and unit conversion multipliers.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "categoryId", type: "UUID", fk: "Category", desc: "Parent produce category." },
+          { name: "name", type: "String", desc: "Crop name (e.g., 'Wheat', 'Red Onion', 'Banana')." },
+          { name: "baseUnit", type: "QuantityUnit", desc: "Canonical inventory unit: KG (weight produce) or PIECE (countable items)." },
+          { name: "unitConversions", type: "Json?", desc: "Multipliers to canonical unit: e.g. { 'QUINTAL': 100 } for KG, or { 'DOZEN': 12 } for PIECE." },
+          { name: "standardMoistureThreshold", type: "Decimal(5,2)?", desc: "Acceptable benchmark moisture percentage before deductions apply." }
+        ]
+      },
+
+      CropVariety: {
+        module: "catalog",
+        desc: "Specific variety defining commercial grading criteria (e.g., Sharbati Wheat, Nashik Red 45-55mm).",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "cropId", type: "UUID", fk: "Crop", desc: "Parent crop." },
+          { name: "slug / name", type: "String", desc: "Commercial variety name." },
+          { name: "gradeSpecs", type: "Json?", desc: "Quality criteria, grading thresholds, and size specifications." }
+        ]
+      },
+
+      MandiRate: {
+        module: "catalog",
+        desc: "Daily guaranteed benchmark rates (baseRate) and APMC spread (min/max) per variety per hub.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "hubId", type: "UUID?", fk: "KtsHub", desc: "Specific hub ID. If null, represents a state-wide benchmark rate." },
+          { name: "cropVarietyId", type: "UUID", fk: "CropVariety", desc: "Variety being priced." },
+          { name: "grade", type: "QualityGrade", desc: "GRADE_A, GRADE_B, GRADE_C, EXPORT, or ORGANIC." },
+          { name: "rateDate", type: "Date", desc: "Calendar date for this daily price ticker." },
+          { name: "baseRatePerUnit", type: "Decimal(12,2)", desc: "KTC's guaranteed procurement price locked on farmer SupplyTokens." },
+          { name: "minRatePerUnit", type: "Decimal(12,2)", desc: "Lowest rate observed in local APMC auction that day." },
+          { name: "maxRatePerUnit", type: "Decimal(12,2)", desc: "Highest rate observed in local APMC auction that day." },
+          { name: "apmcDelta", type: "Decimal(10,2)?", desc: "Premium KTC pays over local APMC average (e.g., +₹120/qtl)." }
+        ]
+      },
+
+      ProduceListing: {
+        module: "inbound",
+        desc: "Farmer's declaration of standing or freshly harvested crops ready at their farm.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "farmerId", type: "UUID", fk: "User", desc: "Farmer who owns the harvest." },
+          { name: "cropVarietyId", type: "UUID", fk: "CropVariety", desc: "Variety declared." },
+          { name: "estimatedQuantity", type: "Decimal(12,2)", desc: "Estimated total harvest volume." },
+          { name: "unit", type: "QuantityUnit", desc: "Unit used by farmer (e.g., QUINTAL)." },
+          { name: "photos", type: "String[]", desc: "Cloudflare R2 keys of uploaded farm produce photos." },
+          { name: "status", type: "ProduceListingStatus", desc: "DRAFT, SUBMITTED, TOKEN_GENERATED, CANCELLED, or COMPLETED." }
+        ]
+      },
+
+      SupplyToken: {
+        module: "inbound",
+        desc: "Digital gatepass appointment. Locks today's procurement rate and generates QR for weighbridge fast-track.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "tokenNumber", type: "String (Unique)", desc: "Formatted token number, e.g., '#TK-84920'." },
+          { name: "farmerId", type: "UUID", fk: "User", desc: "Farmer holding this appointment." },
+          { name: "produceListingId", type: "UUID?", fk: "ProduceListing", desc: "Optional link back to source farm listing (null for quick walk-ins)." },
+          { name: "hubId", type: "UUID", fk: "KtsHub", desc: "Designated drop-off center." },
+          { name: "slotDate / slotStartTime / slotEndTime", type: "DateTime/String", desc: "Appointment window (e.g., Tomorrow 8 AM - 11 AM)." },
+          { name: "lockedRatePerUnit", type: "Decimal(12,2)", desc: "Guaranteed price snapshot locked when the farmer books the slot." },
+          { name: "qrPayload", type: "String (Unique)", desc: "Cryptographically signed QR payload for scanner verification at Gate 2." },
+          { name: "status", type: "SupplyTokenStatus", desc: "BOOKED, ARRIVED, WEIGHED, GRN_ISSUED, CANCELLED, or EXPIRED." }
+        ]
+      },
+
+      GoodsReceiptNote: {
+        module: "inbound",
+        desc: "Official weighbridge receipt. Captures gross/tare weights, moisture cuts, and triggers instant payout.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "grnNumber", type: "String (Unique)", desc: "Legal procurement slip number, e.g., '#GRN-9941'." },
+          { name: "supplyTokenId", type: "UUID (1:1)", fk: "SupplyToken", desc: "Token exchanged for this receipt." },
+          { name: "grossWeight", type: "Decimal(12,2)", desc: "Loaded vehicle weight on weighbridge scale." },
+          { name: "tareWeight", type: "Decimal(12,2)", desc: "Empty vehicle weight after unloading." },
+          { name: "netWeight", type: "Decimal(12,2)", desc: "Gross minus Tare actual weight." },
+          { name: "moistureDeductionWeight", type: "Decimal(12,2)", desc: "Weight deducted if moisture exceeds benchmark tolerance." },
+          { name: "netBillableWeight", type: "Decimal(12,2)", desc: "Final payable weight in canonical units (KG/PIECE)." },
+          { name: "appliedRatePerUnit", type: "Decimal(12,2)", desc: "Rate applied per unit." },
+          { name: "netPayableAmount", type: "Decimal(14,2)", desc: "Total net amount credited to the farmer." },
+          { name: "fifoAllocatedWeight", type: "Decimal(12,2)", desc: "Quantity allocated to downstream buyer orders via FIFO settlement." },
+          { name: "totalPaidAmount", type: "Decimal(14,2)", desc: "Total sum paid out to date (supports partial advances)." },
+          { name: "paymentStatus", type: "GrnPaymentStatus", desc: "UNPAID, PARTIALLY_PAID, or PAID." }
+        ]
+      },
+
+      HubInventory: {
+        module: "inventory",
+        desc: "Aggregated live physical stock at a hub per variety and grade. Powers marketplace catalog.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "hubId", type: "UUID", fk: "KtsHub", desc: "Physical storage hub." },
+          { name: "cropVarietyId", type: "UUID", fk: "CropVariety", desc: "Variety in stock." },
+          { name: "grade", type: "QualityGrade", desc: "Quality grading tier." },
+          { name: "unit", type: "QuantityUnit", desc: "Canonical inventory unit (defaults to KG)." },
+          { name: "availableQty", type: "Decimal(14,2)", desc: "Stock available for buyer purchase and checkout." },
+          { name: "reservedQty", type: "Decimal(14,2)", desc: "Stock locked in confirmed buyer orders awaiting dispatch." },
+          { name: "baseSellingPricePerUnit", type: "Decimal(12,2)", desc: "Baseline wholesale unit price before dynamic order charges." }
+        ]
+      },
+
+      InventoryLedger: {
+        module: "inventory",
+        desc: "Immutable double-entry log of all warehouse movements (GRN_IN, ORDER_RESERVE, DISPATCH, RESTOCK).",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "transactionType", type: "InventoryTransactionType", desc: "GRN_IN, ORDER_RESERVE, ORDER_DISPATCH, ORDER_CANCEL_RELEASE, RETURN_RESTOCK, RETURN_SPOILAGE, or ADJUSTMENT." },
+          { name: "quantity", type: "Decimal(14,2)", desc: "Signed quantity delta (positive for stock increase, negative for depletion)." },
+          { name: "balanceAfter", type: "Decimal(14,2)", desc: "Resulting available stock balance after this transaction." },
+          { name: "grnId", type: "UUID?", fk: "GoodsReceiptNote", desc: "Link to intake GRN for inbound traceability." },
+          { name: "orderId", type: "UUID?", fk: "Order", desc: "Link to outbound order for dispatch tracking." }
+        ]
+      },
+
+      Order: {
+        module: "outbound",
+        desc: "Wholesale or retail buyer order for delivery or self-pickup from hub.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "orderNumber", type: "String (Unique)", desc: "Human invoice order reference, e.g., '#KTC-89421'." },
+          { name: "buyerId", type: "UUID", fk: "User", desc: "Customer/buyer who placed the order." },
+          { name: "hubId", type: "UUID", fk: "KtsHub", desc: "Fulfilling warehouse hub." },
+          { name: "status", type: "OrderStatus", desc: "PLACED, CONFIRMED, PACKED, OUT_FOR_DELIVERY, DELIVERED, CANCELLED, or RETURNED." },
+          { name: "subtotalAmount", type: "Decimal(14,2)", desc: "Raw produce price total." },
+          { name: "chargesAmount", type: "Decimal(14,2)", desc: "Sum of public taxes, fees, and logistics charges." },
+          { name: "totalAmount", type: "Decimal(14,2)", desc: "Grand total invoice amount." },
+          { name: "paymentMethod", type: "PaymentMethod", desc: "CASH, MANUAL_UPI, BANK_TRANSFER, or GATEWAY." }
+        ]
+      },
+
+      OrderItem: {
+        module: "outbound",
+        desc: "Individual line item linking purchased variety, price, and pre-book batches.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "orderId", type: "UUID", fk: "Order", desc: "Parent order reference." },
+          { name: "cropVarietyId", type: "UUID", fk: "CropVariety", desc: "Variety purchased." },
+          { name: "preBookBatchId", type: "UUID?", fk: "PreBookBatch", desc: "Pre-book commitment source if ordered prior to harvest." },
+          { name: "quantity", type: "Decimal(12,2)", desc: "Volume purchased." },
+          { name: "unitPrice", type: "Decimal(12,2)", desc: "Effective unit price at purchase." },
+          { name: "subtotal", type: "Decimal(14,2)", desc: "Quantity × Unit Price." }
+        ]
+      },
+
+      PreBookBatch: {
+        module: "outbound",
+        desc: "Advance harvest commitments offering discounted target prices before harvest.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "cropVarietyId", type: "UUID", fk: "CropVariety", desc: "Crop variety offered for advance booking." },
+          { name: "targetPricePerUnit", type: "Decimal(12,2)", desc: "Locked pre-book price (e.g., ₹16.80/kg)." },
+          { name: "maxQuantity", type: "Decimal(14,2)?", desc: "Maximum quota capacity offered for this harvest batch." },
+          { name: "bookedQuantity", type: "Decimal(14,2)", desc: "Volume claimed by pre-booking buyers so far." },
+          { name: "batchDate", type: "Date", desc: "Expected harvest intake date." }
+        ]
+      },
+
+      OrderReturn: {
+        module: "outbound",
+        desc: "Perishable return inspection separating RESTOCKABLE produce from DAMAGED_SPOILED.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "orderId", type: "UUID", fk: "Order", desc: "Originating buyer order." },
+          { name: "orderItemId", type: "UUID", fk: "OrderItem", desc: "Specific returned item." },
+          { name: "quantity", type: "Decimal(12,2)", desc: "Returned weight/count." },
+          { name: "condition", type: "ReturnCondition", desc: "RESTOCKABLE (re-enters sellable stock) or DAMAGED_SPOILED (written off)." },
+          { name: "inspectedByUserId", type: "UUID", fk: "User", desc: "Inspector user ID verifying quality condition." }
+        ]
+      },
+
+      ChargeDefinition: {
+        module: "pricing",
+        desc: "Configurable fee & deduction rules across INBOUND_GRN, CATALOG_PRICE, and OUTBOUND_ORDER.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "code", type: "String (Unique)", desc: "Machine code, e.g., 'KTC_MARGIN', 'MOISTURE_CUT', 'MANDI_CESS', 'PLATFORM_FEE'." },
+          { name: "direction", type: "ChargeDirection", desc: "ADDITION (increases cost) or DEDUCTION (reduces payout/cost)." },
+          { name: "calculationType", type: "ChargeCalculationType", desc: "FLAT, PERCENTAGE, or PER_UNIT_WEIGHT." },
+          { name: "visibility", type: "ChargeVisibility", desc: "HIDDEN (rolled into price internally) or PUBLIC (itemized on invoice)." },
+          { name: "stage", type: "ChargeStage", desc: "INBOUND_GRN, CATALOG_PRICE, or OUTBOUND_ORDER." },
+          { name: "allowedRoles", type: "RoleType[]", desc: "Authorized roles permitted to attach or override this charge." }
+        ]
+      },
+
+      TransactionCharge: {
+        module: "pricing",
+        desc: "Immutable snapshot freezing applied rates, calculated amounts, and auditor roles.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "chargeDefinitionId", type: "UUID", fk: "ChargeDefinition", desc: "Parent rule template." },
+          { name: "supplyTokenId", type: "UUID?", fk: "SupplyToken", desc: "Attached during farmer Sell Wizard." },
+          { name: "grnId", type: "UUID?", fk: "GoodsReceiptNote", desc: "Attached during weighbridge inspection." },
+          { name: "orderId", type: "UUID?", fk: "Order", desc: "Attached on buyer invoice." },
+          { name: "direction", type: "ChargeDirection", desc: "Frozen ADDITION or DEDUCTION." },
+          { name: "rateApplied", type: "Decimal(10,4)", desc: "Exact rate or percentage used at time of calculation." },
+          { name: "calculatedAmount", type: "Decimal(14,2)", desc: "Resulting rupee value applied to transaction." }
+        ]
+      },
+
+      CashAccount: {
+        module: "cash",
+        desc: "Virtual ledger tracking cash-in-hand for operators, delivery agents, safes, and payables.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "type", type: "CashAccountType", desc: "OPERATOR_CASH_IN_HAND, DELIVERY_AGENT_CASH, HUB_SAFE, ADMIN_TREASURY, etc." },
+          { name: "ownerUserId", type: "UUID?", fk: "User", desc: "Custodian staff member holding the physical currency." },
+          { name: "hubId", type: "UUID?", fk: "KtsHub", desc: "Hub facility safe associated with this cash balance." },
+          { name: "balance", type: "Decimal(14,2)", desc: "Current balance of un-deposited cash-in-hand." }
+        ]
+      },
+
+      CashTransfer: {
+        module: "cash",
+        desc: "Double-entry cash movement protected by Rapido-style 4-digit in-app handover OTPs.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "transferNumber", type: "String (Unique)", desc: "Handover receipt code, e.g., '#CT-10928'." },
+          { name: "fromAccountId", type: "UUID", fk: "CashAccount", desc: "Disbursing cash account." },
+          { name: "toAccountId", type: "UUID", fk: "CashAccount", desc: "Receiving cash account." },
+          { name: "amount", type: "Decimal(14,2)", desc: "Currency volume transferred." },
+          { name: "handoverOtpHash", type: "String?", desc: "Bcrypt hash of 4-digit in-app handover PIN required for recipient confirmation." },
+          { name: "status", type: "CashTransferStatus", desc: "INITIATED, CONFIRMED, DISPUTED, or CANCELLED." }
+        ]
+      },
+
+      FarmerPayout: {
+        module: "cash",
+        desc: "Farmer settlement record created via FIFO order allocation or early manual override.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "payoutNumber", type: "String (Unique)", desc: "Disbursement slip code, e.g., '#FP-50123'." },
+          { name: "farmerId", type: "UUID", fk: "User", desc: "Beneficiary farmer." },
+          { name: "grnId", type: "UUID", fk: "GoodsReceiptNote", desc: "Source procurement record being settled." },
+          { name: "amount", type: "Decimal(14,2)", desc: "Rupee amount disbursed." },
+          { name: "payoutType", type: "PayoutType", desc: "FIFO_SETTLEMENT, MANUAL_ADVANCE, or MANUAL_OVERRIDE." },
+          { name: "status", type: "PayoutStatus", desc: "INITIATED, PROCESSING, SUCCESS, or FAILED." }
+        ]
+      },
+
+      UserDocument: {
+        module: "kyc_audit",
+        desc: "Private Cloudflare R2 vault for Aadhaar, PAN, and GSTIN documents.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "userId", type: "UUID", fk: "User", desc: "User who uploaded the document." },
+          { name: "docType", type: "DocumentType", desc: "AADHAAR, PAN, GSTIN, STAFF_ID, or OTHER." },
+          { name: "r2PrivateKey", type: "String", desc: "Private R2 key; accessible exclusively via short-lived presigned GET URLs." },
+          { name: "status", type: "KycStatus", desc: "PENDING, VERIFIED, or REJECTED." }
+        ]
+      },
+
+      Dispute: {
+        module: "kyc_audit",
+        desc: "Formal query regarding weighment discrepancies, grade cuts, or missing cash handovers.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "disputeNumber", type: "String (Unique)", desc: "Complaint ticket ID, e.g., '#DSP-1001'." },
+          { name: "raisedByUserId", type: "UUID", fk: "User", desc: "Complainant user identity." },
+          { name: "category", type: "DisputeCategory", desc: "CASH_HANDOVER, GRN_WEIGHT_QUALITY, ORDER_DELIVERY, or GENERAL_QUERY." },
+          { name: "status", type: "DisputeStatus", desc: "OPEN, INVESTIGATING, RESOLVED, or REJECTED." }
+        ]
+      },
+
+      AuditLog: {
+        module: "kyc_audit",
+        desc: "Append-only security log recording actor, role, delta, and entity modifications.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "actorUserId", type: "UUID?", fk: "User", desc: "Actor who triggered the mutation." },
+          { name: "action", type: "String", desc: "Operation name: e.g. 'GRN_WEIGHMENT_EDIT', 'CASH_OVERRIDE'." },
+          { name: "entityType", type: "String", desc: "Target model name (e.g., 'GoodsReceiptNote')." },
+          { name: "oldValue / newValue", type: "Json?", desc: "JSON delta of pre and post mutation states." }
+        ]
+      },
+
+      Cart: {
+        module: "cart_notif",
+        desc: "Buyer's shopping cart holding multi-variety produce.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "userId", type: "UUID (1:1)", fk: "User", desc: "Buyer owner." }
+        ]
+      },
+
+      CartItem: {
+        module: "cart_notif",
+        desc: "Hub-aware cart line item preventing cross-hub delivery conflicts.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "cartId", type: "UUID", fk: "Cart", desc: "Parent cart." },
+          { name: "hubId", type: "UUID", fk: "KtsHub", desc: "Fulfillment origin hub to ensure order items ship from the same facility." },
+          { name: "cropVarietyId", type: "UUID", fk: "CropVariety", desc: "Produce variety selected." },
+          { name: "quantity", type: "Decimal(12,2)", desc: "Quantity in cart." }
+        ]
+      },
+
+      DeviceToken: {
+        module: "cart_notif",
+        desc: "Firebase Cloud Messaging (FCM) tokens for push alerts across Android, iOS, and Web.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "userId", type: "UUID", fk: "User", desc: "Recipient user." },
+          { name: "token", type: "String (Unique)", desc: "Unique FCM registration token." },
+          { name: "platform", type: "DevicePlatform", desc: "ANDROID, IOS, or WEB." }
+        ]
+      },
+
+      Notification: {
+        module: "cart_notif",
+        desc: "Persistent in-app message inbox delivering cash handover OTPs and status changes.",
+        columns: [
+          { name: "id", type: "UUID", pk: true, desc: "Primary key UUID." },
+          { name: "userId", type: "UUID", fk: "User", desc: "Target recipient user." },
+          { name: "type", type: "NotificationType", desc: "HANDOVER_OTP, ORDER_UPDATE, TOKEN_UPDATE, PAYOUT_UPDATE, or PRICE_ALERT." },
+          { name: "title / body", type: "String", desc: "Localized alert heading and content." },
+          { name: "isRead", type: "Boolean (default false)", desc: "Read status badge indicator." }
+        ]
+      }
+    };
+
+    const relationships = [
+      { from: "User", to: "UserRole", label: "has roles", card: "1:N", desc: "A user possesses one or more role assignments (BUYER, FARMER, etc.)." },
+      { from: "User", to: "UserSession", label: "has sessions", card: "1:N", desc: "A user can have multiple active logged-in devices with rotating tokens." },
+      { from: "User", to: "FarmerProfile", label: "1:1 profile", card: "1:1", desc: "Extended profile created progressively when user enters Farmer Mode." },
+      { from: "User", to: "BuyerProfile", label: "1:1 profile", card: "1:1", desc: "Default consumer/wholesale profile created on initial registration." },
+      { from: "User", to: "BankAccount", label: "payout accounts", card: "1:N", desc: "Bank accounts registered for receiving instant harvest sale proceeds." },
+      { from: "User", to: "Address", label: "addresses", card: "1:N", desc: "Rural farm locations or urban buyer delivery addresses." },
+      { from: "User", to: "UserDocument", label: "KYC docs", card: "1:N", desc: "Identity documents (Aadhaar, PAN, GSTIN) stored in private R2 vault." },
+      { from: "User", to: "Cart", label: "1:1 active cart", card: "1:1", desc: "Every user has a single active shopping cart." },
+      { from: "User", to: "Notification", label: "notifications", card: "1:N", desc: "In-app alerts and handover security PINs delivered to the user." },
+      { from: "User", to: "DeviceToken", label: "push tokens", card: "1:N", desc: "Registered mobile/web devices receiving FCM notifications." },
+      { from: "User", to: "ProduceListing", label: "declares harvest", card: "1:N", desc: "Farmer publishes listings for upcoming standing or harvested crops." },
+      { from: "User", to: "SupplyToken", label: "books tokens", card: "1:N", desc: "Farmer schedules drop-off appointments at a hub." },
+      { from: "User", to: "GoodsReceiptNote", label: "owns GRN", card: "1:N", desc: "Farmer receives official weighbridge procurement slips." },
+      { from: "User", to: "Order", label: "places orders", card: "1:N", desc: "Buyer places wholesale farm-direct produce purchase orders." },
+      { from: "User", to: "CashAccount", label: "holds cash account", card: "1:N", desc: "Staff custodians hold virtual cash-in-hand accounts." },
+
+      { from: "KtsHub", to: "HubStaffAssignment", label: "staff assigned", card: "1:N", desc: "Operators and managers authorized to operate this physical hub." },
+      { from: "KtsHub", to: "HubInventory", label: "pools stock", card: "1:N", desc: "Physical inventory aggregated in this hub's warehouse." },
+      { from: "KtsHub", to: "InventoryLedger", label: "ledger logs", card: "1:N", desc: "Audit logs of all intake and dispatch movements for this facility." },
+      { from: "KtsHub", to: "MandiRate", label: "daily rate", card: "1:N", desc: "Hub-specific guaranteed daily procurement benchmark rates." },
+      { from: "KtsHub", to: "SupplyToken", label: "drop-off hub", card: "1:N", desc: "Facility targeted for the farmer's vehicle intake." },
+      { from: "KtsHub", to: "GoodsReceiptNote", label: "issues GRN", card: "1:N", desc: "Hub weighbridge creates official intake receipts." },
+      { from: "KtsHub", to: "Order", label: "fulfills from", card: "1:N", desc: "Orders packed and dispatched from this warehouse." },
+      { from: "KtsHub", to: "CartItem", label: "hub origin", card: "1:N", desc: "Locks cart items to a single warehouse to avoid multi-hub dispatch conflicts." },
+
+      { from: "Category", to: "Crop", label: "categorizes", card: "1:N", desc: "High-level taxonomy grouping crops (e.g., Grains -> Wheat)." },
+      { from: "Crop", to: "CropVariety", label: "has varieties", card: "1:N", desc: "Commercial varieties belonging to a crop (e.g., Wheat -> Sharbati)." },
+      { from: "CropVariety", to: "MandiRate", label: "benchmarked rate", card: "1:N", desc: "Daily market rate configured for this exact variety." },
+      { from: "CropVariety", to: "ProduceListing", label: "variety listed", card: "1:N", desc: "Specific variety declared by farmer on the farm." },
+      { from: "CropVariety", to: "SupplyToken", label: "variety locked", card: "1:N", desc: "Crop variety appointment booked for gate inspection." },
+      { from: "CropVariety", to: "GoodsReceiptNote", label: "weighed variety", card: "1:N", desc: "Physical lot graded and weighed at weighbridge." },
+      { from: "CropVariety", to: "HubInventory", label: "stocked variety", card: "1:N", desc: "Aggregated sellable volume held in warehouse inventory." },
+      { from: "CropVariety", to: "OrderItem", label: "order item", card: "1:N", desc: "Variety purchased by buyer." },
+      { from: "CropVariety", to: "PreBookBatch", label: "pre-booked variety", card: "1:N", desc: "Advance commitment offered before seasonal harvest." },
+
+      { from: "ProduceListing", to: "SupplyToken", label: "generates tokens", card: "1:N", desc: "A large farm listing (e.g. 100 quintals) can split into multiple drop-off tokens." },
+      { from: "SupplyToken", to: "GoodsReceiptNote", label: "1:1 scanned into GRN", card: "1:1", desc: "Weighbridge scans token QR code and generates a single official GRN." },
+      { from: "SupplyToken", to: "TransactionCharge", label: "attached fees", card: "1:N", desc: "Charges or loading subsidies attached during farmer appointment booking." },
+
+      { from: "GoodsReceiptNote", to: "HubInventory", label: "adds availableQty", card: "1:1", dashes: true, desc: "Intake weight automatically increases warehouse availableQty." },
+      { from: "GoodsReceiptNote", to: "InventoryLedger", label: "GRN_IN entry", card: "1:N", desc: "Appends immutable inbound stock record with batch reference." },
+      { from: "GoodsReceiptNote", to: "TransactionCharge", label: "deductions/cuts", card: "1:N", desc: "Freezes moisture cuts, bag charges, and quality deductions applied to receipt." },
+      { from: "GoodsReceiptNote", to: "FarmerPayout", label: "settles payout", card: "1:N", desc: "Receipt settled via FIFO matching or early operator override." },
+
+      { from: "Order", to: "OrderItem", label: "contains items", card: "1:N", desc: "Line items comprising the customer order." },
+      { from: "Order", to: "TransactionCharge", label: "itemized charges", card: "1:N", desc: "Itemized public fees (GST, logistics) and hidden platform margins." },
+      { from: "Order", to: "OrderReturn", label: "perishable returns", card: "1:N", desc: "Customer rejection logs inspected for restockability or damage." },
+      { from: "Order", to: "CashTransfer", label: "cash payment", card: "1:N", desc: "Delivery agent cash collection linked to order." },
+      { from: "Order", to: "InventoryLedger", label: "ORDER_RESERVE / DISPATCH", card: "1:N", desc: "Reserves stock at checkout and confirms depletion upon gate dispatch." },
+      { from: "OrderItem", to: "PreBookBatch", label: "draws from batch", card: "N:1", desc: "Reduces pre-booked capacity quota when order is confirmed." },
+
+      { from: "ChargeDefinition", to: "TransactionCharge", label: "configured rule", card: "1:N", desc: "Rule template dictating calculation formula (FLAT, %, PER_WEIGHT)." },
+      { from: "CashAccount", to: "CashTransfer", label: "from / to accounts", card: "1:N", desc: "Double-entry cash flow moving funds between custodians and safes." },
+      { from: "FarmerPayout", to: "CashTransfer", label: "cash payout", card: "1:N", desc: "Cash paid over the counter at hub safe to farmer." },
+      { from: "Cart", to: "CartItem", label: "items", card: "1:N", desc: "Items currently pending checkout in shopping cart." }
+    ];
+
+    const moduleColors = {
+      identity: "#10b981",
+      hubs: "#38bdf8",
+      catalog: "#a855f7",
+      inbound: "#f59e0b",
+      inventory: "#06b6d4",
+      outbound: "#6366f1",
+      pricing: "#f43f5e",
+      cash: "#14b8a6",
+      kyc_audit: "#8b5cf6",
+      cart_notif: "#ec4899"
+    };
+
+    let activeModule = "all";
+    let selectedEntityId = "User";
+    let currentTab = "cols";
+
+    // Build sidebar
+    function renderModuleButtons() {
+      const container = document.getElementById("module-filter-list");
+      container.innerHTML = modules.map(m => `
+        <button 
+          onclick="filterByModule('${m.id}')"
+          class="w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition ${
+            activeModule === m.id 
+              ? 'bg-slate-800 text-white font-semibold border border-slate-700' 
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }"
+        >
+          <div class="flex items-center gap-2.5 truncate">
+            <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${m.color}"></span>
+            <span class="truncate">${m.name}</span>
+          </div>
+          <span class="text-[10px] text-slate-500 font-mono">
+            ${m.id === 'all' ? Object.keys(entities).length : Object.values(entities).filter(e => e.module === m.id).length}
+          </span>
+        </button>
+      `).join("");
+    }
+    renderModuleButtons();
+
+    // Prepare vis.js
+    const nodesArray = Object.entries(entities).map(([key, data]) => ({
+      id: key,
+      label: key,
+      color: {
+        background: "#1e293b",
+        border: moduleColors[data.module] || "#64748b",
+        highlight: { background: "#334155", border: "#ffffff" }
+      },
+      font: { color: "#f8fafc", face: "Plus Jakarta Sans", size: 14, bold: true },
+      shape: "box",
+      margin: 12,
+      borderWidth: 2,
+      shadow: { enabled: true, color: 'rgba(0,0,0,0.5)', size: 8 }
+    }));
+
+    const edgesArray = relationships.map((rel, index) => ({
+      id: "e_" + index,
+      from: rel.from,
+      to: rel.to,
+      label: `${rel.card ? `[${rel.card}] ` : ''}${rel.label}`,
+      font: { size: 9, color: "#94a3b8", face: "JetBrains Mono", strokeWidth: 0 },
+      arrows: "to",
+      color: { color: "#475569", highlight: "#38bdf8" },
+      dashes: !!rel.dashes,
+      smooth: { type: "cubicBezier", roundness: 0.2 }
+    }));
+
+    const container = document.getElementById("network-canvas");
+    const data = {
+      nodes: new vis.DataSet(nodesArray),
+      edges: new vis.DataSet(edgesArray)
+    };
+
+    const options = {
+      physics: {
+        enabled: true,
+        solver: "forceAtlas2Based",
+        forceAtlas2Based: {
+          gravitationalConstant: -70,
+          centralGravity: 0.01,
+          springLength: 140,
+          springConstant: 0.08,
+          damping: 0.4
+        },
+        stabilization: { iterations: 120 }
+      },
+      interaction: {
+        hover: true,
+        tooltipDelay: 100,
+        zoomView: true,
+        dragView: true
+      }
+    };
+
+    const network = new vis.Network(container, data, options);
+
+    network.on("stabilizationIterationsDone", function () {
+      network.setOptions({ physics: { enabled: false } });
+      document.getElementById("physics-toggle").checked = false;
+    });
+
+    network.on("click", function (params) {
+      if (params.nodes.length > 0) {
+        inspectEntity(params.nodes[0]);
+      }
+    });
+
+    // Inspector Rendering
+    function inspectEntity(nodeId) {
+      selectedEntityId = nodeId;
+      const entity = entities[nodeId];
+      if (!entity) return;
+
+      const mod = modules.find(m => m.id === entity.module);
+      document.getElementById("inspect-module").innerText = mod ? mod.name : entity.module;
+      document.getElementById("inspect-module").style.color = mod ? mod.color : "#38bdf8";
+      document.getElementById("inspect-title").innerText = nodeId;
+      document.getElementById("inspect-description").innerText = entity.desc;
+
+      const relatedRels = relationships.filter(r => r.from === nodeId || r.to === nodeId);
+      document.getElementById("cols-count").innerText = entity.columns.length;
+      document.getElementById("rels-count").innerText = relatedRels.length;
+
+      renderTabContent();
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      const colsBtn = document.getElementById("tab-cols-btn");
+      const relsBtn = document.getElementById("tab-rels-btn");
+
+      if (tab === "cols") {
+        colsBtn.className = "flex-1 py-2.5 text-center text-emerald-400 border-b-2 border-emerald-500";
+        relsBtn.className = "flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent";
+      } else {
+        relsBtn.className = "flex-1 py-2.5 text-center text-cyan-400 border-b-2 border-cyan-500";
+        colsBtn.className = "flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent";
+      }
+      renderTabContent();
+    }
+
+    function renderTabContent() {
+      const entity = entities[selectedEntityId];
+      if (!entity) return;
+
+      const container = document.getElementById("inspect-tab-content");
+
+      if (currentTab === "cols") {
+        container.innerHTML = `
+          <div class="space-y-2.5">
+            ${entity.columns.map(col => `
+              <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700 transition">
+                <div class="flex items-center justify-between gap-2 mb-1.5">
+                  <div class="flex items-center gap-1.5 min-w-0 font-mono text-xs">
+                    ${col.pk ? '<span class="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.2 rounded font-sans font-bold shrink-0">PK</span>' : ''}
+                    ${col.fk ? `<span class="text-[9px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 px-1.5 py-0.2 rounded font-sans font-bold shrink-0">FK -> ${col.fk}</span>` : ''}
+                    <span class="text-white font-bold truncate">${col.name}</span>
+                  </div>
+                  <span class="text-[11px] font-mono text-slate-400 shrink-0">${col.type}</span>
+                </div>
+                <p class="text-xs text-slate-400 leading-relaxed">${col.desc}</p>
+              </div>
+            `).join("")}
+          </div>
+        `;
+      } else {
+        const relatedRels = relationships.filter(r => r.from === selectedEntityId || r.to === selectedEntityId);
+        container.innerHTML = `
+          <div class="space-y-2.5">
+            ${relatedRels.length === 0 ? '<div class="text-xs text-slate-500">No explicit relations mapped.</div>' : ''}
+            ${relatedRels.map(r => {
+              const isOutgoing = r.from === selectedEntityId;
+              const target = isOutgoing ? r.to : r.from;
+              return `
+                <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col gap-1.5">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-1.5 text-xs font-bold text-white">
+                      <span class="${isOutgoing ? 'text-emerald-400' : 'text-cyan-400'}">${isOutgoing ? 'Outgoing (Parent)' : 'Incoming (Child)'}</span>
+                      <span>→</span>
+                      <button onclick="inspectEntity('${target}'); network.focus('${target}', { scale: 1.1, animation: { duration: 400 } });" class="hover:underline text-cyan-300 font-mono">
+                        ${target}
+                      </button>
+                    </div>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold">${r.card || '1:N'}</span>
+                  </div>
+                  <div class="text-xs text-slate-300 font-medium">${r.label}</div>
+                  <p class="text-xs text-slate-400 leading-relaxed">${r.desc}</p>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        `;
+      }
+    }
+
+    function filterByModule(moduleId) {
+      activeModule = moduleId;
+      renderModuleButtons();
+
+      if (moduleId === "all") {
+        data.nodes.update(nodesArray.map(n => ({ id: n.id, hidden: false })));
+        data.edges.update(edgesArray.map(e => ({ id: e.id, hidden: false })));
+      } else {
+        const allowedNodes = Object.keys(entities).filter(k => entities[k].module === moduleId);
+        data.nodes.update(nodesArray.map(n => ({ id: n.id, hidden: !allowedNodes.includes(n.id) })));
+        data.edges.update(edgesArray.map(e => ({
+          id: e.id,
+          hidden: !allowedNodes.includes(e.from) || !allowedNodes.includes(e.to)
+        })));
+      }
+      network.fit({ animation: { duration: 500 } });
+    }
+
+    function handleSearch(term) {
+      const q = term.trim().toLowerCase();
+      if (!q) {
+        filterByModule(activeModule);
+        return;
+      }
+
+      const matchingNodeIds = Object.keys(entities).filter(k => {
+        const matchName = k.toLowerCase().includes(q);
+        const matchCol = entities[k].columns.some(c => 
+          c.name.toLowerCase().includes(q) || 
+          c.type.toLowerCase().includes(q) || 
+          c.desc.toLowerCase().includes(q)
+        );
+        return matchName || matchCol;
+      });
+
+      data.nodes.update(nodesArray.map(n => ({ id: n.id, hidden: !matchingNodeIds.includes(n.id) })));
+      data.edges.update(edgesArray.map(e => ({
+        id: e.id,
+        hidden: !matchingNodeIds.includes(e.from) || !matchingNodeIds.includes(e.to)
+      })));
+
+      if (matchingNodeIds.length === 1) {
+        inspectEntity(matchingNodeIds[0]);
+        network.focus(matchingNodeIds[0], { scale: 1.2, animation: { duration: 400 } });
+      }
+    }
+
+    function togglePhysics(enabled) {
+      network.setOptions({ physics: { enabled } });
+    }
+
+    function resetCamera() {
+      network.fit({ animation: { duration: 600 } });
+    }
+
+    function closeInspector() {
+      document.getElementById("inspect-title").innerText = "Select an Entity";
+      document.getElementById("inspect-module").innerText = "Module";
+      document.getElementById("inspect-description").innerText = "Click on any entity in the network to inspect detailed explanations for every single database column and relational link.";
+      document.getElementById("inspect-tab-content").innerHTML = "";
+    }
+
+    // Default inspection on load
+    setTimeout(() => {
+      inspectEntity("User");
+      network.focus("User", { scale: 1.0 });
+    }, 400);
+
+  </script>
+</body>
+</html>

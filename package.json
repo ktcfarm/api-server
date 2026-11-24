@@ -1,0 +1,36 @@
+{
+  "name": "ktc-backend",
+  "version": "1.0.0",
+  "description": "KTC Agricultural Marketplace & Procurement Platform Backend",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1176.0",
+    "@aws-sdk/s3-request-presigner": "^3.1176.0",
+    "@prisma/adapter-pg": "^6.4.1",
+    "@prisma/client": "^6.4.1",
+    "bcryptjs": "^3.0.2",
+    "cloudinary": "^2.11.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.7.5",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.3",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "pino-pretty": "^13.2.0",
+    "prisma": "^6.4.1"
+  }
+}

@@ -1,0 +1,64 @@
+export const ACTIONS = Object.freeze({
+  HUB: Object.freeze({
+    CREATE: 'HUB:CREATE',
+    READ: 'HUB:READ',
+    UPDATE: 'HUB:UPDATE',
+    UPDATE_OPERATIONAL: 'HUB:UPDATE_OPERATIONAL',
+    DEACTIVATE: 'HUB:DEACTIVATE',
+    MANAGE_STAFF: 'HUB:MANAGE_STAFF',
+  }),
+  STAFF: Object.freeze({
+    ASSIGN: 'STAFF:ASSIGN',
+    REMOVE: 'STAFF:REMOVE',
+    VIEW: 'STAFF:VIEW',
+  }),
+  CROP: Object.freeze({
+    CREATE: 'CROP:CREATE',
+    UPDATE: 'CROP:UPDATE',
+    DELETE: 'CROP:DELETE',
+    VIEW: 'CROP:VIEW',
+  }),
+  MANDI_RATE: Object.freeze({
+    SET_GLOBAL: 'MANDI_RATE:SET_GLOBAL',
+    SET_HUB: 'MANDI_RATE:SET_HUB',
+    VIEW: 'MANDI_RATE:VIEW',
+  }),
+  GRN: Object.freeze({
+    ISSUE: 'GRN:ISSUE',
+    VIEW: 'GRN:VIEW',
+    APPROVE: 'GRN:APPROVE',
+  }),
+  ORDER: Object.freeze({
+    CREATE: 'ORDER:CREATE',
+    VIEW: 'ORDER:VIEW',
+    DISPATCH: 'ORDER:DISPATCH',
+    DELIVER: 'ORDER:DELIVER',
+    CANCEL: 'ORDER:CANCEL',
+  }),
+  PAYOUT: Object.freeze({
+    CREATE: 'PAYOUT:CREATE',
+    OVERRIDE: 'PAYOUT:OVERRIDE',
+    APPROVE: 'PAYOUT:APPROVE',
+    EXECUTE: 'PAYOUT:EXECUTE',
+    VIEW: 'PAYOUT:VIEW',
+  }),
+  CASH_LEDGER: Object.freeze({
+    TRANSFER: 'CASH_LEDGER:TRANSFER',
+    HANDOVER: 'CASH_LEDGER:HANDOVER',
+    DEPOSIT: 'CASH_LEDGER:DEPOSIT',
+    VIEW: 'CASH_LEDGER:VIEW',
+  }),
+  CHARGE: Object.freeze({
+    MANAGE: 'CHARGE:MANAGE',
+    VIEW: 'CHARGE:VIEW',
+  }),
+  DISPUTE: Object.freeze({
+    CREATE: 'DISPUTE:CREATE',
+    VIEW: 'DISPUTE:VIEW',
+    RESOLVE: 'DISPUTE:RESOLVE',
+  }),
+  STORAGE: Object.freeze({
+    UPLOAD: 'STORAGE:UPLOAD',
+    VIEW_PRIVATE: 'STORAGE:VIEW_PRIVATE',
+  }),
+});

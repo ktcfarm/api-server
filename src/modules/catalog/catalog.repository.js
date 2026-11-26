@@ -2,8 +2,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../core/database/prisma.js';
 
 export class CatalogRepository {
-  async runInTransaction(fn) {
-    return prisma.$transaction(fn);
+  async runInTransaction(fn, options = { maxWait: 10000, timeout: 30000 }) {
+    return prisma.$transaction(fn, options);
   }
 
   async createAuditLog(tx, entry) {
@@ -24,6 +24,7 @@ export class CatalogRepository {
   async findCategoryById(id, tx = null) {
     return (tx || prisma).category.findUnique({
       where: { id },
+      relationLoadStrategy: 'join',
       include: {
         _count: {
           select: { crops: true },
@@ -128,6 +129,7 @@ export class CatalogRepository {
         skip,
         take: limit,
         orderBy: [{ [orderField]: orderDirection }, { name: 'asc' }],
+        relationLoadStrategy: 'join',
         include: {
           _count: {
             select: { crops: true },
@@ -151,6 +153,7 @@ export class CatalogRepository {
   async findCropById(id, tx = null) {
     return (tx || prisma).crop.findUnique({
       where: { id },
+      relationLoadStrategy: 'join',
       include: {
         category: {
           select: {
@@ -305,6 +308,7 @@ export class CatalogRepository {
         skip,
         take: limit,
         orderBy: { [orderField]: orderDirection },
+        relationLoadStrategy: 'join',
         include: {
           category: {
             select: {
@@ -336,6 +340,7 @@ export class CatalogRepository {
   async findVarietyById(id, tx = null) {
     return (tx || prisma).cropVariety.findUnique({
       where: { id },
+      relationLoadStrategy: 'join',
       include: {
         crop: {
           include: {
@@ -518,14 +523,21 @@ export class CatalogRepository {
       where.crop = cropWhere;
     }
 
-    if (filters.grade) {
-      const matchingIds = await this.findVarietyIdsByGradeCode(filters.grade);
+    const [matchingIds, gradeMatchIds] = await Promise.all([
+      filters.grade
+        ? this.findVarietyIdsByGradeCode(filters.grade)
+        : Promise.resolve(null),
+      filters.search
+        ? this.findVarietyIdsMatchingGradeSpecsText(filters.search.trim())
+        : Promise.resolve([]),
+    ]);
+
+    if (matchingIds !== null) {
       where.id = { in: matchingIds };
     }
 
     if (filters.search) {
       const q = filters.search.trim();
-      const gradeMatchIds = await this.findVarietyIdsMatchingGradeSpecsText(q);
       where.OR = [
         { name: { contains: q, mode: 'insensitive' } },
         { slug: { contains: q, mode: 'insensitive' } },
@@ -548,6 +560,7 @@ export class CatalogRepository {
         skip,
         take: limit,
         orderBy: { [orderField]: orderDirection },
+        relationLoadStrategy: 'join',
         include: {
           crop: {
             include: {

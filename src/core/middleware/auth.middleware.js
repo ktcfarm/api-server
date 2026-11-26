@@ -3,6 +3,30 @@ import { env } from '../config/env.js';
 import { prisma } from '../database/prisma.js';
 import { UnauthorizedError } from '../errors/app.error.js';
 
+const AUTH_CACHE_TTL_MS = 30 * 1000;
+const AUTH_CACHE_MAX_SIZE = 5000;
+const authCache = new Map();
+
+export function invalidateAuthCache(sessionId) {
+  if (!sessionId) return;
+  authCache.delete(sessionId);
+}
+
+function setCachedAuth(sessionId, entry) {
+  if (authCache.size >= AUTH_CACHE_MAX_SIZE) {
+    const now = Date.now();
+    for (const [key, value] of authCache.entries()) {
+      if (value.expiresAt <= now) {
+        authCache.delete(key);
+      }
+    }
+    if (authCache.size >= AUTH_CACHE_MAX_SIZE) {
+      authCache.clear();
+    }
+  }
+  authCache.set(sessionId, entry);
+}
+
 export async function authMiddleware(req, _res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -24,34 +48,58 @@ export async function authMiddleware(req, _res, next) {
 
     const { sub: userId, sessionId, activeRole } = decoded;
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        roles: true,
-        staffAssignments: {
-          where: { isActive: true },
-          include: {
-            hub: {
-              select: {
-                id: true,
-                code: true,
-                name: true,
-                cityOrTown: true,
-                isActive: true,
+    const now = Date.now();
+    const cached = sessionId ? authCache.get(sessionId) : null;
+    if (cached) {
+      if (cached.expiresAt > now && cached.userId === userId) {
+        if (cached.sessionExpiresAt <= now) {
+          authCache.delete(sessionId);
+          throw new UnauthorizedError('Session has expired or was revoked');
+        }
+        const cachedRoles = cached.user.roles;
+        const isSuperAdmin = cachedRoles.includes('SUPER_ADMIN');
+        if (activeRole && !cachedRoles.includes(activeRole) && !isSuperAdmin) {
+          throw new UnauthorizedError(`User does not possess active role ${activeRole}`);
+        }
+        req.user = {
+          ...cached.user,
+          activeRole: activeRole || cached.user.activeRole,
+        };
+        return next();
+      }
+      authCache.delete(sessionId);
+    }
+
+    const [user, session] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        relationLoadStrategy: 'join',
+        include: {
+          roles: true,
+          staffAssignments: {
+            where: { isActive: true },
+            include: {
+              hub: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  cityOrTown: true,
+                  isActive: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      }),
+      prisma.userSession.findUnique({
+        where: { id: sessionId },
+      }),
+    ]);
 
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedError('User account is inactive or not found');
     }
-
-    const session = await prisma.userSession.findUnique({
-      where: { id: sessionId },
-    });
 
     if (!session || session.revokedAt || new Date(session.expiresAt) < new Date()) {
       throw new UnauthorizedError('Session has expired or was revoked');
@@ -64,7 +112,7 @@ export async function authMiddleware(req, _res, next) {
       throw new UnauthorizedError(`User does not possess active role ${activeRole}`);
     }
 
-    req.user = {
+    const hydratedUser = {
       id: user.id,
       email: user.email,
       phone: user.phone,
@@ -82,6 +130,15 @@ export async function authMiddleware(req, _res, next) {
       sessionId: session.id,
     };
 
+    setCachedAuth(session.id, {
+      userId: user.id,
+      user: hydratedUser,
+      sessionExpiresAt: new Date(session.expiresAt).getTime(),
+      expiresAt: Date.now() + AUTH_CACHE_TTL_MS,
+    });
+
+    req.user = hydratedUser;
+
     next();
   } catch (error) {
     next(error);
@@ -98,8 +155,24 @@ export async function optionalAuthMiddleware(req, _res, next) {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET);
 
+    const now = Date.now();
+    const cached = decoded.sessionId ? authCache.get(decoded.sessionId) : null;
+    if (
+      cached &&
+      cached.expiresAt > now &&
+      cached.userId === decoded.sub &&
+      cached.sessionExpiresAt > now
+    ) {
+      req.user = {
+        ...cached.user,
+        activeRole: decoded.activeRole || cached.user.activeRole,
+      };
+      return next();
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: decoded.sub },
+      relationLoadStrategy: 'join',
       include: {
         roles: true,
         staffAssignments: { where: { isActive: true } },
@@ -125,7 +198,7 @@ export async function optionalAuthMiddleware(req, _res, next) {
       };
     }
   } catch {
-    // Intentionally pass without assigning req.user on token failure
+    return next();
   }
 
   next();

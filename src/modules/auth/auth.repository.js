@@ -59,6 +59,7 @@ export class AuthRepository {
           { phone: identifier, phoneVerifiedAt: { not: null } },
         ],
       },
+      relationLoadStrategy: 'join',
       include: {
         roles: true,
         staffAssignments: {
@@ -84,6 +85,7 @@ export class AuthRepository {
   async findUserById(userId) {
     return prisma.user.findUnique({
       where: { id: userId },
+      relationLoadStrategy: 'join',
       include: {
         roles: true,
         staffAssignments: {
@@ -204,6 +206,7 @@ export class AuthRepository {
 
       const fullUser = await tx.user.findUnique({
         where: { id: user.id },
+        relationLoadStrategy: 'join',
         include: {
           roles: true,
           staffAssignments: { where: { isActive: true } },
@@ -213,7 +216,7 @@ export class AuthRepository {
       });
 
       return { user: fullUser, session };
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   async recordFailedPinAttempt(userId, failedCount, lockUntil = null) {
@@ -253,7 +256,7 @@ export class AuthRepository {
       });
 
       return user;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   async createSession(data) {
@@ -351,6 +354,7 @@ export class AuthRepository {
 
       const updatedUser = await tx.user.findUnique({
         where: { id: userId },
+        relationLoadStrategy: 'join',
         include: {
           roles: true,
           staffAssignments: { where: { isActive: true } },
@@ -360,7 +364,7 @@ export class AuthRepository {
       });
 
       return { user: updatedUser, farmerProfile };
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   async verifySecondaryIdentifier(userId, identifier, channel) {
@@ -410,7 +414,7 @@ export class AuthRepository {
       }
 
       throw new Error('INVALID_CHANNEL');
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 }
 

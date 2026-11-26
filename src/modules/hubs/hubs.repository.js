@@ -39,7 +39,7 @@ export class HubsRepository {
       });
 
       return hub;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   async updateHub(id, data) {
@@ -75,12 +75,13 @@ export class HubsRepository {
       }
 
       return updated;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   async findHubById(id) {
     return prisma.ktsHub.findUnique({
       where: { id },
+      relationLoadStrategy: 'join',
       include: {
         cashAccounts: {
           where: { isActive: true },
@@ -245,12 +246,13 @@ export class HubsRepository {
       }
 
       return assignment;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   async findStaffByHubId(hubId) {
     return prisma.hubStaffAssignment.findMany({
       where: { hubId, isActive: true },
+      relationLoadStrategy: 'join',
       include: {
         user: {
           select: {
@@ -267,33 +269,36 @@ export class HubsRepository {
   }
 
   async removeStaff(hubId, staffAssignmentId) {
-    return prisma.$transaction(async (tx) => {
-      const staff = await tx.hubStaffAssignment.findUnique({
-        where: { id: staffAssignmentId },
-      });
+    const staff = await prisma.hubStaffAssignment.findUnique({
+      where: { id: staffAssignmentId },
+    });
 
-      if (!staff || staff.hubId !== hubId) {
-        return null;
-      }
+    if (!staff || staff.hubId !== hubId) {
+      return null;
+    }
 
-      const updated = await tx.hubStaffAssignment.update({
-        where: { id: staffAssignmentId },
-        data: { isActive: false },
-      });
-
-      if (staff.role === 'STORE_OPERATOR') {
-        await tx.cashAccount.updateMany({
-          where: {
-            ownerUserId: staff.userId,
-            hubId,
-            type: 'OPERATOR_CASH_IN_HAND',
-          },
+    return prisma.$transaction(
+      async (tx) => {
+        const updated = await tx.hubStaffAssignment.update({
+          where: { id: staffAssignmentId },
           data: { isActive: false },
         });
-      }
 
-      return updated;
-    });
+        if (staff.role === 'STORE_OPERATOR') {
+          await tx.cashAccount.updateMany({
+            where: {
+              ownerUserId: staff.userId,
+              hubId,
+              type: 'OPERATOR_CASH_IN_HAND',
+            },
+            data: { isActive: false },
+          });
+        }
+
+        return updated;
+      },
+      { maxWait: 10000, timeout: 30000 }
+    );
   }
 
   async listAdminHubs({
@@ -345,12 +350,13 @@ export class HubsRepository {
 
     const skip = (page - 1) * limit;
 
-    const [rows, total] = await prisma.$transaction([
+    const [rows, total] = await Promise.all([
       prisma.ktsHub.findMany({
         where,
         skip,
         take: limit,
         orderBy: { [sortBy]: sortOrder },
+        relationLoadStrategy: 'join',
         include: {
           _count: {
             select: {
@@ -384,6 +390,7 @@ export class HubsRepository {
       },
       take: limit,
       orderBy: { name: 'asc' },
+      relationLoadStrategy: 'join',
       select: {
         id: true,
         name: true,
@@ -409,6 +416,7 @@ export class HubsRepository {
   async findAdminHubById(id) {
     return prisma.ktsHub.findUnique({
       where: { id },
+      relationLoadStrategy: 'join',
       include: {
         franchiseProfile: true,
         documents: {
@@ -519,7 +527,7 @@ export class HubsRepository {
           metadata: data.metadata ?? null,
         },
       });
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   async findHubDocumentById(hubId, docId) {

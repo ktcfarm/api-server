@@ -13,6 +13,7 @@ import {
 import { EmailOtpChannel } from '../../core/strategies/otp/email-otp.channel.js';
 import { InAppNotificationOtpChannel } from '../../core/strategies/otp/in-app-otp.channel.js';
 import { SmsOtpChannel } from '../../core/strategies/otp/sms-otp.channel.js';
+import { invalidateAuthCache } from '../../core/middleware/auth.middleware.js';
 import { authRepository } from './auth.repository.js';
 
 export class AuthService {
@@ -396,6 +397,7 @@ export class AuthService {
   async logout(sessionId) {
     if (sessionId) {
       await authRepository.revokeSession(sessionId);
+      invalidateAuthCache(sessionId);
     }
     return {
       success: true,
@@ -488,6 +490,8 @@ export class AuthService {
       newRefreshTokenHash,
       newExpiresAt
     );
+
+    invalidateAuthCache(session.id);
 
     const tokens = this.generateTokens(user, session.id, targetRole);
 

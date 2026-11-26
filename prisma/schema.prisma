@@ -79,10 +79,21 @@ enum QualityGrade {
   ORGANIC
 }
 
+enum PerishabilityType {
+  PERISHABLE
+  NON_PERISHABLE
+}
+
 enum RateTrend {
   UP
   DOWN
   STABLE
+}
+
+enum MandiRateStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
 }
 
 enum VehicleType {
@@ -255,6 +266,48 @@ enum DisputeStatus {
   OPEN
   INVESTIGATING
   RESOLVED
+  REJECTED
+}
+
+enum HubOnboardingStatus {
+  DRAFT
+  PENDING_VERIFICATION
+  VERIFIED
+  SUSPENDED
+}
+
+enum FranchiseEntityType {
+  PROPRIETORSHIP
+  PARTNERSHIP
+  LLP
+  PVT_LTD
+}
+
+enum FranchiseModel {
+  FOFO
+  FOCO
+}
+
+enum HubDocumentType {
+  PAN_CARD
+  AADHAAR_CARD
+  OWNER_PHOTO
+  FSSAI_LICENSE
+  SHOP_ESTABLISHMENT
+  PREMISES_PROOF
+  SHOP_EXTERIOR_PHOTO
+  SHOP_INTERIOR_PHOTO
+  CANCELLED_CHEQUE
+  FRANCHISE_AGREEMENT
+  GST_CERTIFICATE
+  WEIGHING_SCALE_CERT
+  APMC_LICENSE
+  SECURITY_DEPOSIT_RECEIPT
+}
+
+enum DocumentVerificationStatus {
+  PENDING
+  APPROVED
   REJECTED
 }
 
@@ -440,25 +493,28 @@ model OtpVerification {
 }
 
 model KtsHub {
-  id             String                                 @id @default(uuid())
-  code           String                                 @unique
-  name           String
-  translations   Json
-  addressLine    String
-  cityOrTown     String
-  district       String
-  state          String
-  pinCode        String
-  contactPhone   String?
-  operatingHours String?
-  isActive       Boolean                                @default(true)
-  latitude       Decimal                                @db.Decimal(10, 7)
-  longitude      Decimal                                @db.Decimal(10, 7)
-  location       Unsupported("geography(Point, 4326)")?
-  metadata       Json?
-  createdAt      DateTime                               @default(now())
-  updatedAt      DateTime                               @updatedAt
+  id               String                                 @id @default(uuid())
+  code             String                                 @unique
+  name             String
+  translations     Json
+  addressLine      String
+  cityOrTown       String
+  district         String
+  state            String
+  pinCode          String
+  contactPhone     String?
+  operatingHours   String?
+  isActive         Boolean                                @default(true)
+  onboardingStatus HubOnboardingStatus                    @default(PENDING_VERIFICATION)
+  latitude         Decimal                                @db.Decimal(10, 7)
+  longitude        Decimal                                @db.Decimal(10, 7)
+  location         Unsupported("geography(Point, 4326)")?
+  metadata         Json?
+  createdAt        DateTime                               @default(now())
+  updatedAt        DateTime                               @updatedAt
 
+  franchiseProfile  HubFranchiseProfile?
+  documents         HubDocument[]
   staffAssignments  HubStaffAssignment[]
   inventories       HubInventory[]
   inventoryLedgers  InventoryLedger[]
@@ -471,6 +527,54 @@ model KtsHub {
   cartItems         CartItem[]
 
   @@index([location], type: Gist)
+}
+
+model HubFranchiseProfile {
+  id                    String              @id @default(uuid())
+  hubId                 String              @unique
+  entityType            FranchiseEntityType
+  ownerName             String
+  ownerPhone            String
+  ownerEmail            String?
+  panNumber             String?
+  gstin                 String?
+  fssaiNumber           String?
+  bankAccountHolder     String?
+  bankAccountNumber     String?
+  bankIfsc              String?
+  bankName              String?
+  franchiseModel        FranchiseModel      @default(FOFO)
+  commissionPercent     Decimal?            @db.Decimal(5, 2)
+  securityDepositAmount Decimal?            @db.Decimal(12, 2)
+  maxCashLimit          Decimal?            @db.Decimal(12, 2)
+  metadata              Json?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  hub KtsHub @relation(fields: [hubId], references: [id], onDelete: Cascade)
+}
+
+model HubDocument {
+  id                 String                     @id @default(uuid())
+  hubId              String
+  documentType       HubDocumentType
+  bucketType         String
+  storageKey         String
+  fileName           String
+  mimeType           String
+  documentNumber     String?
+  expiryDate         DateTime?
+  verificationStatus DocumentVerificationStatus @default(PENDING)
+  rejectionReason    String?
+  verifiedById       String?
+  verifiedAt         DateTime?
+  metadata           Json?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  hub KtsHub @relation(fields: [hubId], references: [id], onDelete: Cascade)
+
+  @@index([hubId, documentType])
 }
 
 model HubStaffAssignment {
@@ -507,25 +611,28 @@ model Category {
 }
 
 model Crop {
-  id                        String       @id @default(uuid())
+  id                        String            @id @default(uuid())
   categoryId                String
-  slug                      String       @unique
+  slug                      String            @unique
   name                      String
   translations              Json
   botanicalName             String?
-  baseUnit                  QuantityUnit @default(KG)
+  perishabilityType         PerishabilityType @default(NON_PERISHABLE)
+  shelfLifeDays             Int?
+  baseUnit                  QuantityUnit      @default(KG)
   unitConversions           Json?
-  standardMoistureThreshold Decimal?     @db.Decimal(5, 2)
+  standardMoistureThreshold Decimal?          @db.Decimal(5, 2)
   imageUrl                  String?
-  isActive                  Boolean      @default(true)
+  isActive                  Boolean           @default(true)
   metadata                  Json?
-  createdAt                 DateTime     @default(now())
-  updatedAt                 DateTime     @updatedAt
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
 
   category  Category      @relation(fields: [categoryId], references: [id])
   varieties CropVariety[]
 
   @@index([categoryId])
+  @@index([perishabilityType])
 }
 
 model CropVariety {
@@ -557,27 +664,39 @@ model CropVariety {
 }
 
 model MandiRate {
-  id                  String       @id @default(uuid())
+  id                  String          @id @default(uuid())
   hubId               String?
   cropVarietyId       String
-  grade               QualityGrade @default(GRADE_A)
-  rateDate            DateTime     @db.Date
-  minRatePerUnit      Decimal      @db.Decimal(12, 2)
-  maxRatePerUnit      Decimal      @db.Decimal(12, 2)
-  baseRatePerUnit     Decimal      @db.Decimal(12, 2)
-  unit                QuantityUnit @default(QUINTAL)
-  trend               RateTrend    @default(STABLE)
-  apmcDelta           Decimal?     @db.Decimal(10, 2)
-  isProcurementActive Boolean      @default(true)
+  grade               QualityGrade?   @default(GRADE_A)
+  gradeCode           String          @default("GRADE_A")
+  rateDate            DateTime        @db.Date
+  minRatePerUnit      Decimal         @db.Decimal(12, 2)
+  maxRatePerUnit      Decimal         @db.Decimal(12, 2)
+  baseRatePerUnit     Decimal         @db.Decimal(12, 2)
+  farmerBuyRate       Decimal         @default(0) @db.Decimal(12, 2)
+  consumerSellRate    Decimal         @default(0) @db.Decimal(12, 2)
+  marginPercent       Decimal         @default(0) @db.Decimal(6, 2)
+  bulkTiers           Json?
+  unit                QuantityUnit    @default(QUINTAL)
+  trend               RateTrend       @default(STABLE)
+  apmcDelta           Decimal?        @db.Decimal(10, 2)
+  status              MandiRateStatus @default(DRAFT)
+  isProcurementActive Boolean         @default(true)
+  notes               String?
+  createdById         String?
+  updatedById         String?
+  publishedById       String?
+  publishedAt         DateTime?
   metadata            Json?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
   hub         KtsHub?     @relation(fields: [hubId], references: [id])
   cropVariety CropVariety @relation(fields: [cropVarietyId], references: [id])
 
-  @@index([hubId, cropVarietyId, grade, rateDate])
+  @@index([hubId, cropVarietyId, gradeCode, rateDate])
   @@index([cropVarietyId, rateDate])
+  @@index([status, rateDate])
 }
 
 model ProduceListing {

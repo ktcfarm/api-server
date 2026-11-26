@@ -102,3 +102,9 @@ export const verifyIdentifierSchema = {
     otp: z.string().length(6),
   }),
 };
+
+export const switchRoleSchema = {
+  body: z.object({
+    targetRole: z.enum(['SUPER_ADMIN', 'ADMIN', 'HUB_MANAGER', 'STORE_OPERATOR']),
+  }),
+};

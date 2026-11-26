@@ -1,10 +1,13 @@
+import { cropPolicy } from './policies/crop.policy.js';
 import { hubPolicy } from './policies/hub.policy.js';
+import { mandiRatePolicy } from './policies/mandi-rate.policy.js';
 import { staffAssignmentPolicy } from './policies/staff-assignment.policy.js';
 
 export class UnauthorizedError extends Error {
   constructor(message = 'Authentication required') {
     super(message);
     this.name = 'UnauthorizedError';
+    this.statusCode = 401;
   }
 }
 
@@ -12,6 +15,7 @@ export class ForbiddenError extends Error {
   constructor(action, resource, reason = 'Insufficient permissions') {
     super(`Forbidden: Cannot perform ${action} on ${resource}. Reason: ${reason}`);
     this.name = 'ForbiddenError';
+    this.statusCode = 403;
   }
 }
 
@@ -32,13 +36,17 @@ export class PolicyGuard {
       return false;
     }
 
-    if (Array.isArray(user.roles)) {
-      if (user.roles.includes('SUPER_ADMIN')) {
-        return true;
-      }
-      if (user.roles.includes('ADMIN')) {
-        return true;
-      }
+    const userRoles = Array.isArray(user.roles) ? user.roles : [];
+    const effectiveRole =
+      user.activeRole ||
+      (userRoles.includes('SUPER_ADMIN')
+        ? 'SUPER_ADMIN'
+        : userRoles.includes('ADMIN')
+          ? 'ADMIN'
+          : userRoles[0]);
+
+    if (effectiveRole === 'SUPER_ADMIN' || effectiveRole === 'ADMIN') {
+      return true;
     }
 
     const policy = this.policies.get(resource);
@@ -60,3 +68,5 @@ export class PolicyGuard {
 export const globalPolicyGuard = new PolicyGuard();
 globalPolicyGuard.registerPolicy(hubPolicy);
 globalPolicyGuard.registerPolicy(staffAssignmentPolicy);
+globalPolicyGuard.registerPolicy(cropPolicy);
+globalPolicyGuard.registerPolicy(mandiRatePolicy);

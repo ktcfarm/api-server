@@ -62,6 +62,16 @@ export class AuthService {
     return sanitized;
   }
 
+  formatStaffAssignments(staffAssignments = []) {
+    return staffAssignments.map((s) => ({
+      hubId: s.hubId,
+      role: s.role,
+      isActive: s.isActive,
+      hubName: s.hub?.name || null,
+      hubCode: s.hub?.code || null,
+    }));
+  }
+
   async sendOtp(identifier, channel, purpose, metadata = null) {
     const otpChannel = this.otpChannels.get(channel);
     if (!otpChannel) {
@@ -246,6 +256,8 @@ export class AuthService {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       activeRole: targetRole,
+      roles: userRoles,
+      staffAssignments: this.formatStaffAssignments(user.staffAssignments),
       user: this.sanitizeUser(user),
     };
   }
@@ -302,6 +314,8 @@ export class AuthService {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       activeRole: targetRole,
+      roles: userRoles,
+      staffAssignments: this.formatStaffAssignments(user.staffAssignments),
       user: this.sanitizeUser(user),
     };
   }
@@ -426,12 +440,64 @@ export class AuthService {
       activeRole,
       sessionId,
       roles: user.roles.map((r) => r.role),
-      staffAssignments: user.staffAssignments.map((s) => ({
-        hubId: s.hubId,
-        role: s.role,
-      })),
+      staffAssignments: this.formatStaffAssignments(user.staffAssignments),
       buyerProfile: user.buyerProfile,
       farmerProfile: user.farmerProfile,
+    };
+  }
+
+  async switchRole(userId, sessionId, targetRole) {
+    const user = await authRepository.findUserById(userId);
+    if (!user || user.status !== 'ACTIVE') {
+      throw new UnauthorizedError('User account is inactive or not found');
+    }
+
+    const userRoles = user.roles.map((r) => r.role);
+    const isSuperAdmin = userRoles.includes('SUPER_ADMIN');
+
+    if (!isSuperAdmin && !userRoles.includes(targetRole)) {
+      throw new ForbiddenError(`User is not authorized for role ${targetRole}`);
+    }
+
+    if (
+      !isSuperAdmin &&
+      (targetRole === 'STORE_OPERATOR' || targetRole === 'HUB_MANAGER')
+    ) {
+      const hasActiveAssignment = user.staffAssignments.some(
+        (s) => s.role === targetRole && s.isActive
+      );
+      if (!hasActiveAssignment) {
+        throw new ForbiddenError(
+          `User does not have an active ${targetRole} hub assignment.`
+        );
+      }
+    }
+
+    const session = await authRepository.findSessionById(sessionId);
+    if (!session || session.revokedAt || new Date(session.expiresAt) < new Date()) {
+      throw new UnauthorizedError('Session has expired or was revoked.');
+    }
+
+    await authRepository.updateSessionActiveRole(session.id, targetRole);
+
+    const newRawRefresh = crypto.randomBytes(32).toString('hex');
+    const newRefreshTokenHash = this.hashValue(newRawRefresh);
+    const newExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await authRepository.rotateSessionRefreshToken(
+      session.id,
+      newRefreshTokenHash,
+      newExpiresAt
+    );
+
+    const tokens = this.generateTokens(user, session.id, targetRole);
+
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      activeRole: targetRole,
+      roles: userRoles,
+      staffAssignments: this.formatStaffAssignments(user.staffAssignments),
+      user: this.sanitizeUser(user),
     };
   }
 }

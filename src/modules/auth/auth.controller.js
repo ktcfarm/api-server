@@ -142,6 +142,17 @@ export class AuthController {
       next(error);
     }
   }
+
+  async switchRole(req, res, next) {
+    try {
+      const { id: userId, sessionId } = req.user;
+      const { targetRole } = req.body;
+      const result = await authService.switchRole(userId, sessionId, targetRole);
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const authController = new AuthController();

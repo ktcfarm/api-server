@@ -13,31 +13,51 @@ export class HubPolicy extends BasePolicy {
       return false;
     }
 
-    if (user.roles.includes('SUPER_ADMIN') || user.roles.includes('ADMIN')) {
+    const userRoles = Array.isArray(user.roles) ? user.roles : [];
+    const isSuperAdminHolder = userRoles.includes('SUPER_ADMIN');
+    const effectiveRole =
+      user.activeRole ||
+      (isSuperAdminHolder
+        ? 'SUPER_ADMIN'
+        : userRoles.includes('ADMIN')
+          ? 'ADMIN'
+          : userRoles[0]);
+
+    if (effectiveRole === 'SUPER_ADMIN' || effectiveRole === 'ADMIN') {
       return true;
     }
 
     if (action === 'READ') {
-      return true;
+      if (isSuperAdminHolder || !targetHubId) {
+        return true;
+      }
+      return user.staffAssignments.some(
+        (s) => s.hubId === targetHubId && s.isActive
+      );
     }
 
     if (action === 'UPDATE') {
-      const isHubManager = user.staffAssignments.some(
-        (s) => s.hubId === targetHubId && s.role === 'HUB_MANAGER' && s.isActive
-      );
-
-      if (!isHubManager) {
-        return false;
-      }
-
       if (data?.restrictedFieldsPresent) {
         return false;
       }
 
-      return true;
+      if (isSuperAdminHolder && effectiveRole === 'HUB_MANAGER') {
+        return true;
+      }
+
+      return user.staffAssignments.some(
+        (s) => s.hubId === targetHubId && s.role === 'HUB_MANAGER' && s.isActive
+      );
     }
 
     if (action === 'DISPATCH' || action === 'EXECUTE') {
+      if (
+        isSuperAdminHolder &&
+        (effectiveRole === 'HUB_MANAGER' || effectiveRole === 'STORE_OPERATOR')
+      ) {
+        return true;
+      }
+
       return user.staffAssignments.some(
         (s) =>
           s.hubId === targetHubId &&

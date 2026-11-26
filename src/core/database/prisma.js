@@ -1,6 +1,10 @@
 import { PrismaClient } from '@prisma/client';
-import { env } from '../config/env.js';
+
+const logLevels =
+  process.env.PRISMA_LOG_QUERIES === 'true'
+    ? ['query', 'error', 'warn']
+    : ['error', 'warn'];
 
 export const prisma = new PrismaClient({
-  log: env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+  log: logLevels,
 });

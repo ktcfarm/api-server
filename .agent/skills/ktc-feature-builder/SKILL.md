@@ -35,6 +35,12 @@ Strictly limited to the domain core files within the specific target feature dir
 5. **Audit Logging:** Sensitive mutations (payout overrides, cash transfers, rate adjustments, status transitions) must record an immutable `AuditLog` entry within the same Prisma transaction.
 6. **Comment-Free JavaScript:** All code must be modern ES Modules, modular, and completely free of comments.
 
-## 5. Stop & Ask Protocol
+## 5. Database & Query Performance Laws
+1. **Single-Query Joins (`relationLoadStrategy: 'join'`):** Always include `relationLoadStrategy: 'join'` on `findMany`, `findUnique`, and `findFirst` queries that use nested `include`s (or nested relation `select`s) so PostgreSQL executes a single join instead of sequential `WHERE id IN (...)` queries.
+2. **Parallelize Independent Reads (`Promise.all`):** Always wrap independent `findMany(...)` + `count(...)` calls or unrelated read queries in `await Promise.all([...])`. Never use `prisma.$transaction([...])` for read-only list/count queries.
+3. **Interactive Transaction Safety:** Never run read-only validation lookups inside `prisma.$transaction(async (tx) => { ... })`. Pre-fetch and validate before starting the transaction, batch `AuditLog` writes with `tx.auditLog.createMany(...)`, and configure `{ maxWait: 10000, timeout: 30000 }` on bulk or multi-step transactions.
+4. **Minimal Column Projection (`select`):** On list, summary, and dropdown endpoints, explicitly `select` only required columns rather than over-fetching heavy JSONB fields or unused relations.
+
+## 6. Stop & Ask Protocol
 - The feature builder cannot alter database schemas or surface controllers. If the domain logic requires a schema change (e.g., a missing column, relation, or enum value), the builder must stop and request the `ktc-schema-guardian` to update `schema.prisma`.
 - If an algorithm requires a new core strategy or policy definition, the builder must coordinate with the `ktc-foundation-architect`.

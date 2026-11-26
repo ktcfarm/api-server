@@ -35,6 +35,13 @@ description: Administrative web portal API specialist for KTC. Implements high-p
 5. **Direct Delegation:** Controllers must remain thin HTTP adapters delegating domain execution directly to the shared service layer.
 6. **Comment-Free JavaScript:** All code must be modern ES Modules without comments.
 
-## 5. Stop & Ask Protocol
+## 5. Database & Query Performance Laws
+When reviewing or requesting domain/repository methods from `ktc-feature-builder`, enforce these standards:
+1. **Single-Query Joins (`relationLoadStrategy: 'join'`):** All `findMany`, `findUnique`, and `findFirst` queries with nested `include`s (or nested relation `select`s) must specify `relationLoadStrategy: 'join'`.
+2. **Parallelize Independent Reads (`Promise.all`):** Independent `findMany` + `count` (or unrelated read queries) must run concurrently via `Promise.all` rather than sequentially or inside `prisma.$transaction([...])`.
+3. **Interactive Transaction Safety:** Never place read-only validation lookups inside `prisma.$transaction`; batch `AuditLog` writes with `createMany` and set `{ maxWait: 10000, timeout: 30000 }` on bulk/multi-step transactions.
+4. **Minimal Column Projection (`select`):** List and dropdown endpoints must `select` only the required columns instead of over-fetching heavy JSONB columns or unused relations.
+
+## 6. Stop & Ask Protocol
 - The admin API specialist cannot alter domain services or data repositories. If an administrative capability requires a custom query, bulk operation, or transaction that does not exist in the service layer, the specialist must request the `ktc-feature-builder` to implement it.
 - If a route requires a new canonical action constant or domain policy, the specialist must request the `ktc-foundation-architect` to register the action in `src/core/rbac/actions.js` and policy in `src/core/rbac/policies/`.

@@ -88,6 +88,7 @@ export class PricingRepository {
   async findVarietyWithCrop(varietyId, tx = null) {
     return (tx || prisma).cropVariety.findUnique({
       where: { id: varietyId },
+      relationLoadStrategy: 'join',
       include: {
         crop: {
           include: {
@@ -104,6 +105,7 @@ export class PricingRepository {
     }
     return prisma.cropVariety.findMany({
       where: { id: { in: varietyIds } },
+      relationLoadStrategy: 'join',
       include: {
         crop: {
           include: {
@@ -144,6 +146,7 @@ export class PricingRepository {
   async findRateById(id, tx = null) {
     return (tx || prisma).mandiRate.findUnique({
       where: { id },
+      relationLoadStrategy: 'join',
       include: RATE_INCLUDE,
     });
   }
@@ -257,6 +260,7 @@ export class PricingRepository {
         rateDate: { lte: asOfDate },
       },
       orderBy: [{ rateDate: 'desc' }, { updatedAt: 'desc' }],
+      relationLoadStrategy: 'join',
       include: RATE_INCLUDE,
     });
   }
@@ -372,6 +376,7 @@ export class PricingRepository {
         skip,
         take: limit,
         orderBy: [{ [orderField]: orderDirection }, { updatedAt: 'desc' }],
+        relationLoadStrategy: 'join',
         include: RATE_INCLUDE,
       }),
       prisma.mandiRate.count({ where }),

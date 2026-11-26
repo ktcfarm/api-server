@@ -61,7 +61,20 @@ export class AuthRepository {
       },
       include: {
         roles: true,
-        staffAssignments: { where: { isActive: true } },
+        staffAssignments: {
+          where: { isActive: true },
+          include: {
+            hub: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                cityOrTown: true,
+                isActive: true,
+              },
+            },
+          },
+        },
         buyerProfile: true,
         farmerProfile: true,
       },
@@ -73,7 +86,20 @@ export class AuthRepository {
       where: { id: userId },
       include: {
         roles: true,
-        staffAssignments: { where: { isActive: true } },
+        staffAssignments: {
+          where: { isActive: true },
+          include: {
+            hub: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                cityOrTown: true,
+                isActive: true,
+              },
+            },
+          },
+        },
         buyerProfile: true,
         farmerProfile: true,
       },
@@ -263,6 +289,13 @@ export class AuthRepository {
     return prisma.userSession.update({
       where: { id: sessionId },
       data: { revokedAt: new Date() },
+    });
+  }
+
+  async updateSessionActiveRole(sessionId, activeRole) {
+    return prisma.userSession.update({
+      where: { id: sessionId },
+      data: { activeRole },
     });
   }
 

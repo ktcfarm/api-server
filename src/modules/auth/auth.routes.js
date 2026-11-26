@@ -14,6 +14,7 @@ import {
   registerSchema,
   resetPinSchema,
   sendOtpSchema,
+  switchRoleSchema,
   verifyIdentifierSchema,
 } from './auth.validation.js';
 
@@ -84,6 +85,13 @@ router.get(
   '/me',
   authMiddleware,
   authController.getMe.bind(authController)
+);
+
+router.post(
+  '/switch-role',
+  authMiddleware,
+  validate(switchRoleSchema),
+  authController.switchRole.bind(authController)
 );
 
 export const authRouter = router;

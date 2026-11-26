@@ -1,7 +1,14 @@
 import { z } from 'zod';
 
 export const presignUploadSchema = z.object({
-  purpose: z.enum(['CROP_PHOTO', 'KYC_DOCUMENT', 'DISPUTE_EVIDENCE', 'PROFILE_PHOTO']),
+  purpose: z.enum([
+    'CROP_PHOTO',
+    'KYC_DOCUMENT',
+    'DISPUTE_EVIDENCE',
+    'PROFILE_PHOTO',
+    'HUB_DOCUMENT',
+    'HUB_PHOTO',
+  ]),
   contentType: z.string().min(1, 'Content-Type is required'),
   fileName: z.string().min(1, 'File name is required'),
   expiresInSeconds: z.coerce.number().int().positive().optional().default(3600)

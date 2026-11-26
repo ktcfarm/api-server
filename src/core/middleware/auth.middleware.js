@@ -30,6 +30,17 @@ export async function authMiddleware(req, _res, next) {
         roles: true,
         staffAssignments: {
           where: { isActive: true },
+          include: {
+            hub: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                cityOrTown: true,
+                isActive: true,
+              },
+            },
+          },
         },
       },
     });
@@ -47,8 +58,9 @@ export async function authMiddleware(req, _res, next) {
     }
 
     const userRoles = user.roles.map((r) => r.role);
+    const isSuperAdmin = userRoles.includes('SUPER_ADMIN');
 
-    if (activeRole && !userRoles.includes(activeRole)) {
+    if (activeRole && !userRoles.includes(activeRole) && !isSuperAdmin) {
       throw new UnauthorizedError(`User does not possess active role ${activeRole}`);
     }
 
@@ -63,6 +75,8 @@ export async function authMiddleware(req, _res, next) {
         hubId: s.hubId,
         role: s.role,
         isActive: s.isActive,
+        hubName: s.hub?.name || null,
+        hubCode: s.hub?.code || null,
       })),
       activeRole: activeRole || userRoles[0] || 'BUYER',
       sessionId: session.id,

@@ -103,7 +103,7 @@ This document (`ARCHITECTURE.md`) represents the immutable source of truth for t
 | **Module 1** | Auth, Sessions, PIN Security & Progressive Onboarding | Completed |
 | **Module 2** | Hubs, Geolocation (PostGIS) & Staff Assignment | Completed |
 | **Foundation** | Security Middlewares, Storage Abstraction & Dual Routing | Completed |
-| **Module 3** | Crop Master, Varieties & Unit Conversions | Pending |
+| **Module 3** | Crop Master, Varieties & Unit Conversions | Completed |
 | **Module 4** | Daily Mandi Rates & Pricing Engine | Pending |
 | **Module 5** | Inbound Procurement & Goods Receipt Notes (GRN) | Pending |
 | **Module 6** | Hub Inventory & Batch Management | Pending |

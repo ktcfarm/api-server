@@ -9,7 +9,10 @@ export class StorageController {
       const { purpose, contentType, fileName, expiresInSeconds = 3600 } = req.body;
       const userId = req.user.id;
 
-      const isPrivate = purpose === 'KYC_DOCUMENT' || purpose === 'DISPUTE_EVIDENCE';
+      const isPrivate =
+        purpose === 'KYC_DOCUMENT' ||
+        purpose === 'DISPUTE_EVIDENCE' ||
+        purpose === 'HUB_DOCUMENT';
       const bucketType = isPrivate ? 'PRIVATE' : 'PUBLIC';
 
       const ext = path.extname(fileName) || '';
@@ -39,7 +42,11 @@ export class StorageController {
       let { bucketType } = req.query;
 
       if (!bucketType) {
-        if (key.startsWith('kyc_document/') || key.startsWith('dispute_evidence/')) {
+        if (
+          key.startsWith('kyc_document/') ||
+          key.startsWith('dispute_evidence/') ||
+          key.startsWith('hub_document/')
+        ) {
           bucketType = 'PRIVATE';
         } else {
           bucketType = 'PUBLIC';

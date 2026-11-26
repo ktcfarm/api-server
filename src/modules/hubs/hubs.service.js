@@ -5,9 +5,37 @@ import {
   NotFoundError,
 } from '../../core/errors/app.error.js';
 import { globalPolicyGuard } from '../../core/rbac/policy.guard.js';
+import { storageProvider } from '../../core/storage/storage.factory.js';
 import { hubsRepository } from './hubs.repository.js';
+import { COMPULSORY_HUB_DOCUMENTS } from './hubs.validation.js';
 
 export class HubsService {
+  normalizeHubPayload(data, existingMetadata = null) {
+    if (
+      data.operatingHours === undefined ||
+      data.operatingHours === null ||
+      typeof data.operatingHours !== 'object'
+    ) {
+      return data;
+    }
+
+    const baseMetadata =
+      data.metadata && typeof data.metadata === 'object'
+        ? data.metadata
+        : existingMetadata && typeof existingMetadata === 'object'
+          ? existingMetadata
+          : {};
+
+    return {
+      ...data,
+      operatingHours: JSON.stringify(data.operatingHours),
+      metadata: {
+        ...baseMetadata,
+        operatingHours: data.operatingHours,
+      },
+    };
+  }
+
   async createHub(data, actor) {
     await globalPolicyGuard.enforce({
       user: actor,
@@ -20,7 +48,7 @@ export class HubsService {
       throw new ConflictError(`A KTS Hub with code "${data.code}" already exists.`);
     }
 
-    return hubsRepository.createHub(data);
+    return hubsRepository.createHub(this.normalizeHubPayload(data));
   }
 
   async updateHub(hubId, data, actor) {
@@ -29,8 +57,9 @@ export class HubsService {
       throw new NotFoundError('KTS Hub not found.');
     }
 
-    const isAdmin =
-      actor.roles.includes('SUPER_ADMIN') || actor.roles.includes('ADMIN');
+    const isAdmin = actor.activeRole
+      ? actor.activeRole === 'SUPER_ADMIN' || actor.activeRole === 'ADMIN'
+      : actor.roles.includes('SUPER_ADMIN') || actor.roles.includes('ADMIN');
 
     if (!isAdmin) {
       const restrictedKeys = [
@@ -65,7 +94,10 @@ export class HubsService {
       data,
     });
 
-    return hubsRepository.updateHub(hubId, data);
+    return hubsRepository.updateHub(
+      hubId,
+      this.normalizeHubPayload(data, hub.metadata)
+    );
   }
 
   async getHubById(hubId) {
@@ -180,6 +212,247 @@ export class HubsService {
       success: true,
       message: 'Staff assignment deactivated successfully.',
     };
+  }
+
+  async listAdminHubs(filters, actor) {
+    await globalPolicyGuard.enforce({
+      user: actor,
+      action: 'READ',
+      resource: 'HUB',
+    });
+
+    const userRoles = Array.isArray(actor.roles) ? actor.roles : [];
+    const isSuperAdminHolder = userRoles.includes('SUPER_ADMIN');
+    const effectiveRole = actor.activeRole;
+    const hasGlobalHubVisibility =
+      isSuperAdminHolder ||
+      effectiveRole === 'SUPER_ADMIN' ||
+      effectiveRole === 'ADMIN' ||
+      (!effectiveRole && userRoles.includes('ADMIN'));
+
+    let hubIds = null;
+    if (!hasGlobalHubVisibility) {
+      hubIds = (actor.staffAssignments || [])
+        .filter((s) => s.isActive && (!effectiveRole || s.role === effectiveRole))
+        .map((s) => s.hubId);
+
+      if (hubIds.length === 0) {
+        return {
+          items: [],
+          meta: {
+            page: filters.page || 1,
+            limit: filters.limit || 10,
+            total: 0,
+            totalPages: 1,
+          },
+        };
+      }
+    }
+
+    const { items, total } = await hubsRepository.listAdminHubs({
+      ...filters,
+      hubIds,
+    });
+
+    const page = filters.page || 1;
+    const limit = filters.limit || 10;
+
+    return {
+      items,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    };
+  }
+
+  async getAdminHubById(hubId, actor) {
+    const hub = await hubsRepository.findAdminHubById(hubId);
+    if (!hub) {
+      throw new NotFoundError('KTS Hub not found.');
+    }
+
+    await globalPolicyGuard.enforce({
+      user: actor,
+      action: 'READ',
+      resource: 'HUB',
+      hubId,
+    });
+
+    const { _count, ...rest } = hub;
+    return {
+      ...rest,
+      activeStaffCount: _count?.staffAssignments ?? 0,
+    };
+  }
+
+  async upsertFranchiseProfile(hubId, data, actor) {
+    const hub = await hubsRepository.findHubById(hubId);
+    if (!hub) {
+      throw new NotFoundError('KTS Hub not found.');
+    }
+
+    await globalPolicyGuard.enforce({
+      user: actor,
+      action: 'UPDATE',
+      resource: 'HUB',
+      hubId,
+      data: { restrictedFieldsPresent: true },
+    });
+
+    return hubsRepository.upsertFranchiseProfile(hubId, data);
+  }
+
+  async registerHubDocument(hubId, data, actor) {
+    const hub = await hubsRepository.findHubById(hubId);
+    if (!hub) {
+      throw new NotFoundError('KTS Hub not found.');
+    }
+
+    await globalPolicyGuard.enforce({
+      user: actor,
+      action: 'UPDATE',
+      resource: 'HUB',
+      hubId,
+      data: { restrictedFieldsPresent: true },
+    });
+
+    let parsedExpiryDate = null;
+    if (data.expiryDate) {
+      const candidate = new Date(data.expiryDate);
+      if (Number.isNaN(candidate.getTime())) {
+        throw new BadRequestError('Invalid expiryDate format.');
+      }
+      parsedExpiryDate = candidate;
+    }
+
+    return hubsRepository.upsertHubDocument(hubId, {
+      ...data,
+      expiryDate: parsedExpiryDate,
+    });
+  }
+
+  async verifyHubDocument(hubId, docId, { status, rejectionReason }, actor) {
+    const hub = await hubsRepository.findHubById(hubId);
+    if (!hub) {
+      throw new NotFoundError('KTS Hub not found.');
+    }
+
+    await globalPolicyGuard.enforce({
+      user: actor,
+      action: 'UPDATE',
+      resource: 'HUB',
+      hubId,
+      data: { restrictedFieldsPresent: true },
+    });
+
+    const doc = await hubsRepository.findHubDocumentById(hubId, docId);
+    if (!doc) {
+      throw new NotFoundError('Hub compliance document not found.');
+    }
+
+    return hubsRepository.verifyHubDocument(doc.id, {
+      verificationStatus: status,
+      rejectionReason: status === 'REJECTED' ? rejectionReason : null,
+      verifiedById: actor.id,
+      verifiedAt: new Date(),
+    });
+  }
+
+  async getHubDocumentUrl(hubId, docId, actor) {
+    const hub = await hubsRepository.findHubById(hubId);
+    if (!hub) {
+      throw new NotFoundError('KTS Hub not found.');
+    }
+
+    await globalPolicyGuard.enforce({
+      user: actor,
+      action: 'READ',
+      resource: 'HUB',
+      hubId,
+    });
+
+    const doc = await hubsRepository.findHubDocumentById(hubId, docId);
+    if (!doc) {
+      throw new NotFoundError('Hub compliance document not found.');
+    }
+
+    const url = await storageProvider.getAccessUrl({
+      key: doc.storageKey,
+      bucketType: doc.bucketType,
+      expiresInSeconds: 900,
+    });
+
+    return {
+      url,
+      key: doc.storageKey,
+      bucketType: doc.bucketType,
+      fileName: doc.fileName,
+      mimeType: doc.mimeType,
+    };
+  }
+
+  async updateOnboardingStatus(hubId, { onboardingStatus, force = false }, actor) {
+    const hub = await hubsRepository.findHubById(hubId);
+    if (!hub) {
+      throw new NotFoundError('KTS Hub not found.');
+    }
+
+    await globalPolicyGuard.enforce({
+      user: actor,
+      action: 'UPDATE',
+      resource: 'HUB',
+      hubId,
+      data: { restrictedFieldsPresent: true },
+    });
+
+    if (onboardingStatus === 'VERIFIED') {
+      const documents = await hubsRepository.findHubDocumentsByHubId(hubId);
+      const presentTypes = new Set(documents.map((d) => d.documentType));
+      const missingDocuments = COMPULSORY_HUB_DOCUMENTS.filter(
+        (docType) => !presentTypes.has(docType)
+      );
+
+      const isSuperAdminActive =
+        actor.activeRole === 'SUPER_ADMIN' ||
+        (!actor.activeRole && actor.roles?.includes('SUPER_ADMIN'));
+
+      if (missingDocuments.length > 0 && !(isSuperAdminActive && force)) {
+        throw new BadRequestError(
+          `Cannot mark hub VERIFIED. Missing compulsory compliance documents: ${missingDocuments.join(', ')}`,
+          { missingDocuments }
+        );
+      }
+    }
+
+    return hubsRepository.updateOnboardingStatus(hubId, onboardingStatus);
+  }
+
+  async searchStaffCandidates(query, actor) {
+    const userRoles = Array.isArray(actor.roles) ? actor.roles : [];
+    const isSuperAdminHolder = userRoles.includes('SUPER_ADMIN');
+    const effectiveRole = actor.activeRole;
+    const isGlobalAdmin =
+      effectiveRole === 'SUPER_ADMIN' ||
+      effectiveRole === 'ADMIN' ||
+      (!effectiveRole && (isSuperAdminHolder || userRoles.includes('ADMIN')));
+
+    const canManageAsHubManager =
+      effectiveRole === 'HUB_MANAGER' &&
+      (isSuperAdminHolder ||
+        (actor.staffAssignments || []).some(
+          (s) => s.role === 'HUB_MANAGER' && s.isActive
+        ));
+
+    if (!isGlobalAdmin && !canManageAsHubManager) {
+      throw new ForbiddenError(
+        'Insufficient permissions to search staff candidates.'
+      );
+    }
+
+    return hubsRepository.searchStaffCandidates(query.search, query.limit);
   }
 }
 

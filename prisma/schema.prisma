@@ -31,6 +31,18 @@ enum KycStatus {
   REJECTED
 }
 
+enum FarmerOnboardingStep {
+  NOT_STARTED
+  IDENTITY
+  LOCATION
+  COMPLETED
+}
+
+enum PayoutChannel {
+  BANK
+  UPI
+}
+
 enum BuyerBusinessType {
   INDIVIDUAL
   RETAILER
@@ -322,6 +334,9 @@ model User {
   pinLockedUntil    DateTime?
   name              String?
   languagePref      String     @default("en")
+  avatarKey         String?
+  termsAcceptedAt   DateTime?
+  preferences       Json?
   status            UserStatus @default(ACTIVE)
   metadata          Json?
   createdAt         DateTime   @default(now())
@@ -393,19 +408,22 @@ model UserRole {
 }
 
 model FarmerProfile {
-  id            String    @id @default(uuid())
-  userId        String    @unique
-  fatherName    String?
-  village       String?
-  tehsilOrBlock String?
-  district      String?
-  state         String?
-  pinCode       String?
-  landAreaAcres Decimal?  @db.Decimal(8, 2)
-  kycStatus     KycStatus @default(PENDING)
-  metadata      Json?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String               @id @default(uuid())
+  userId         String               @unique
+  fatherName     String?
+  village        String?
+  tehsilOrBlock  String?
+  district       String?
+  state          String?
+  pinCode        String?
+  landSizeRange  String?
+  landAreaAcres  Decimal?             @db.Decimal(8, 2)
+  primaryProduce String[]             @default([])
+  onboardingStep FarmerOnboardingStep @default(NOT_STARTED)
+  kycStatus      KycStatus            @default(PENDING)
+  metadata       Json?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -417,6 +435,7 @@ model BuyerProfile {
   businessType BuyerBusinessType @default(INDIVIDUAL)
   gstin        String?
   panNumber    String?
+  city         String?
   kycStatus    KycStatus         @default(PENDING)
   metadata     Json?
   createdAt    DateTime          @default(now())
@@ -426,18 +445,20 @@ model BuyerProfile {
 }
 
 model BankAccount {
-  id                String   @id @default(uuid())
+  id                String        @id @default(uuid())
   userId            String
+  payoutChannel     PayoutChannel @default(BANK)
   accountHolderName String
-  accountNumber     String
-  ifscCode          String
+  accountNumber     String?
+  ifscCode          String?
   bankName          String?
   branchName        String?
-  isVerified        Boolean  @default(false)
-  isDefault         Boolean  @default(false)
+  upiVpa            String?
+  isVerified        Boolean       @default(false)
+  isDefault         Boolean       @default(false)
   metadata          Json?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   payouts FarmerPayout[]
@@ -1120,7 +1141,7 @@ model UserDocument {
   userId           String
   docType          DocumentType
   docNumber        String?
-  r2PrivateKey     String
+  r2PrivateKey     String?
   status           KycStatus    @default(PENDING)
   verifiedByUserId String?
   verifiedAt       DateTime?

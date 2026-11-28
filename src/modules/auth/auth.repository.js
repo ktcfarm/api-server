@@ -1,10 +1,44 @@
+import crypto from 'node:crypto';
 import { prisma } from '../../core/database/prisma.js';
+import { extractIdentifierCandidates, hashSha256 } from './auth.utils.js';
+
+const USER_AUTH_INCLUDE = {
+  roles: true,
+  staffAssignments: {
+    where: { isActive: true },
+    include: {
+      hub: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          cityOrTown: true,
+          isActive: true,
+        },
+      },
+    },
+  },
+  buyerProfile: true,
+  farmerProfile: true,
+  documents: {
+    where: { docType: 'AADHAAR' },
+    orderBy: { updatedAt: 'desc' },
+    take: 1,
+  },
+  bankAccounts: {
+    orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+  },
+  addresses: {
+    orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }],
+  },
+};
 
 export class AuthRepository {
   async findLatestUnusedOtp(identifier, purpose) {
+    const candidates = extractIdentifierCandidates(identifier);
     return prisma.otpVerification.findFirst({
       where: {
-        identifier,
+        identifier: { in: candidates },
         purpose,
         isUsed: false,
         expiresAt: { gt: new Date() },
@@ -14,9 +48,10 @@ export class AuthRepository {
   }
 
   async invalidateOtps(identifier, purpose) {
+    const candidates = extractIdentifierCandidates(identifier);
     return prisma.otpVerification.updateMany({
       where: {
-        identifier,
+        identifier: { in: candidates },
         purpose,
         isUsed: false,
       },
@@ -52,171 +87,171 @@ export class AuthRepository {
   }
 
   async findVerifiedUserByIdentifier(identifier) {
+    const candidates = extractIdentifierCandidates(identifier);
     return prisma.user.findFirst({
       where: {
         OR: [
-          { email: identifier, emailVerifiedAt: { not: null } },
-          { phone: identifier, phoneVerifiedAt: { not: null } },
+          { email: { in: candidates }, emailVerifiedAt: { not: null } },
+          { phone: { in: candidates }, phoneVerifiedAt: { not: null } },
         ],
       },
       relationLoadStrategy: 'join',
-      include: {
-        roles: true,
-        staffAssignments: {
-          where: { isActive: true },
-          include: {
-            hub: {
-              select: {
-                id: true,
-                code: true,
-                name: true,
-                cityOrTown: true,
-                isActive: true,
-              },
-            },
-          },
-        },
-        buyerProfile: true,
-        farmerProfile: true,
-      },
+      include: USER_AUTH_INCLUDE,
     });
   }
 
-  async findUserById(userId) {
-    return prisma.user.findUnique({
+  async findVerifiedUserByChannel(identifier, channel) {
+    const candidates = extractIdentifierCandidates(identifier);
+    if (channel === 'EMAIL') {
+      return prisma.user.findFirst({
+        where: { email: { in: candidates }, emailVerifiedAt: { not: null } },
+        select: { id: true, email: true },
+      });
+    }
+    if (channel === 'SMS') {
+      return prisma.user.findFirst({
+        where: { phone: { in: candidates }, phoneVerifiedAt: { not: null } },
+        select: { id: true, phone: true },
+      });
+    }
+    return null;
+  }
+
+  async findUserById(userId, tx = prisma) {
+    return tx.user.findUnique({
       where: { id: userId },
       relationLoadStrategy: 'join',
-      include: {
-        roles: true,
-        staffAssignments: {
-          where: { isActive: true },
-          include: {
-            hub: {
-              select: {
-                id: true,
-                code: true,
-                name: true,
-                cityOrTown: true,
-                isActive: true,
-              },
-            },
-          },
-        },
-        buyerProfile: true,
-        farmerProfile: true,
-      },
+      include: USER_AUTH_INCLUDE,
     });
   }
 
-  async registerUserWithProfiles(params) {
+  async registerUserWithProfiles(params, issueSessionTokens) {
     const {
       email,
       phone,
       name,
       pinHash,
+      languagePref,
+      termsAcceptedAt,
       intendedRole,
       farmerDetails,
       sessionData,
     } = params;
 
-    return prisma.$transaction(async (tx) => {
-      const existingVerifiedEmail = await tx.user.findFirst({
-        where: { email, emailVerifiedAt: { not: null } },
-      });
-      if (existingVerifiedEmail) {
-        throw new Error('EMAIL_ALREADY_VERIFIED');
-      }
-
-      await tx.user.updateMany({
-        where: { email, emailVerifiedAt: null },
-        data: { email: null },
-      });
-
-      if (phone) {
-        const existingVerifiedPhone = await tx.user.findFirst({
-          where: { phone, phoneVerifiedAt: { not: null } },
+    return prisma.$transaction(
+      async (tx) => {
+        const existingVerifiedEmail = await tx.user.findFirst({
+          where: { email, emailVerifiedAt: { not: null } },
         });
-        if (existingVerifiedPhone) {
-          throw new Error('PHONE_ALREADY_VERIFIED');
+        if (existingVerifiedEmail) {
+          throw new Error('EMAIL_ALREADY_VERIFIED');
         }
 
         await tx.user.updateMany({
-          where: { phone, phoneVerifiedAt: null },
-          data: { phone: null },
+          where: { email, emailVerifiedAt: null },
+          data: { email: null },
         });
-      }
 
-      const user = await tx.user.create({
-        data: {
-          email,
-          emailVerifiedAt: new Date(),
-          phone: phone || null,
-          name,
-          pinHash,
-          status: 'ACTIVE',
-        },
-      });
+        if (phone) {
+          const existingVerifiedPhone = await tx.user.findFirst({
+            where: { phone, phoneVerifiedAt: { not: null } },
+          });
+          if (existingVerifiedPhone) {
+            throw new Error('PHONE_ALREADY_VERIFIED');
+          }
 
-      await tx.userRole.create({
-        data: {
-          userId: user.id,
-          role: 'BUYER',
-        },
-      });
+          await tx.user.updateMany({
+            where: { phone, phoneVerifiedAt: null },
+            data: { phone: null },
+          });
+        }
 
-      await tx.buyerProfile.create({
-        data: {
-          userId: user.id,
-          businessType: 'INDIVIDUAL',
-        },
-      });
+        const user = await tx.user.create({
+          data: {
+            email,
+            emailVerifiedAt: new Date(),
+            phone: phone || null,
+            name,
+            pinHash,
+            languagePref: languagePref || 'en',
+            termsAcceptedAt: termsAcceptedAt || new Date(),
+            status: 'ACTIVE',
+            metadata: {
+              signupRole: intendedRole,
+              termsAcceptedAt: (termsAcceptedAt || new Date()).toISOString(),
+            },
+          },
+        });
 
-      if (intendedRole === 'FARMER') {
         await tx.userRole.create({
           data: {
             userId: user.id,
-            role: 'FARMER',
+            role: 'BUYER',
           },
         });
 
-        await tx.farmerProfile.create({
+        await tx.buyerProfile.create({
           data: {
             userId: user.id,
-            fatherName: farmerDetails?.fatherName || null,
-            village: farmerDetails?.village || null,
-            tehsilOrBlock: farmerDetails?.tehsilOrBlock || null,
-            district: farmerDetails?.district || null,
-            state: farmerDetails?.state || null,
-            pinCode: farmerDetails?.pinCode || null,
-            landAreaAcres: farmerDetails?.landAreaAcres || null,
+            businessType: 'INDIVIDUAL',
           },
         });
-      }
 
-      const session = await tx.userSession.create({
-        data: {
-          userId: user.id,
-          refreshTokenHash: sessionData.refreshTokenHash,
-          activeRole: intendedRole,
-          deviceInfo: sessionData.deviceInfo || null,
-          ipAddress: sessionData.ipAddress || null,
-          expiresAt: sessionData.expiresAt,
-        },
-      });
+        if (intendedRole === 'FARMER') {
+          await tx.userRole.create({
+            data: {
+              userId: user.id,
+              role: 'FARMER',
+            },
+          });
 
-      const fullUser = await tx.user.findUnique({
-        where: { id: user.id },
-        relationLoadStrategy: 'join',
-        include: {
-          roles: true,
-          staffAssignments: { where: { isActive: true } },
-          buyerProfile: true,
-          farmerProfile: true,
-        },
-      });
+          const hasLocationFields = Boolean(
+            farmerDetails?.village &&
+              farmerDetails?.district &&
+              farmerDetails?.state &&
+              farmerDetails?.pinCode
+          );
 
-      return { user: fullUser, session };
-    }, { maxWait: 10000, timeout: 30000 });
+          await tx.farmerProfile.create({
+            data: {
+              userId: user.id,
+              fatherName: farmerDetails?.fatherName || null,
+              village: farmerDetails?.village || null,
+              tehsilOrBlock: farmerDetails?.tehsilOrBlock || null,
+              district: farmerDetails?.district || null,
+              state: farmerDetails?.state || null,
+              pinCode: farmerDetails?.pinCode || null,
+              landSizeRange: farmerDetails?.landSizeRange || null,
+              landAreaAcres: farmerDetails?.landAreaAcres || null,
+              primaryProduce: farmerDetails?.primaryProduce || [],
+              onboardingStep: hasLocationFields ? 'LOCATION' : 'NOT_STARTED',
+            },
+          });
+        }
+
+        const session = await tx.userSession.create({
+          data: {
+            userId: user.id,
+            refreshTokenHash: crypto.randomUUID(),
+            activeRole: intendedRole,
+            deviceInfo: sessionData.deviceInfo || null,
+            ipAddress: sessionData.ipAddress || null,
+            expiresAt: sessionData.expiresAt,
+          },
+        });
+
+        const tokens = issueSessionTokens(user, session.id, intendedRole);
+
+        await tx.userSession.update({
+          where: { id: session.id },
+          data: { refreshTokenHash: hashSha256(tokens.refreshToken) },
+        });
+
+        const fullUser = await this.findUserById(user.id, tx);
+        return { user: fullUser, session, tokens };
+      },
+      { maxWait: 10000, timeout: 30000 }
+    );
   }
 
   async recordFailedPinAttempt(userId, failedCount, lockUntil = null) {
@@ -240,36 +275,53 @@ export class AuthRepository {
   }
 
   async updateUserPinAndClearSessions(userId, pinHash) {
-    return prisma.$transaction(async (tx) => {
-      const user = await tx.user.update({
-        where: { id: userId },
-        data: {
-          pinHash,
-          failedPinAttempts: 0,
-          pinLockedUntil: null,
-        },
-      });
+    return prisma.$transaction(
+      async (tx) => {
+        const user = await tx.user.update({
+          where: { id: userId },
+          data: {
+            pinHash,
+            failedPinAttempts: 0,
+            pinLockedUntil: null,
+          },
+        });
 
-      await tx.userSession.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
+        await tx.userSession.updateMany({
+          where: { userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
 
-      return user;
-    }, { maxWait: 10000, timeout: 30000 });
+        return user;
+      },
+      { maxWait: 10000, timeout: 30000 }
+    );
   }
 
-  async createSession(data) {
-    return prisma.userSession.create({
-      data: {
-        userId: data.userId,
-        refreshTokenHash: data.refreshTokenHash,
-        activeRole: data.activeRole,
-        deviceInfo: data.deviceInfo || null,
-        ipAddress: data.ipAddress || null,
-        expiresAt: data.expiresAt,
+  async createSessionWithTokens(data, issueSessionTokens, user) {
+    return prisma.$transaction(
+      async (tx) => {
+        const session = await tx.userSession.create({
+          data: {
+            userId: data.userId,
+            refreshTokenHash: crypto.randomUUID(),
+            activeRole: data.activeRole,
+            deviceInfo: data.deviceInfo || null,
+            ipAddress: data.ipAddress || null,
+            expiresAt: data.expiresAt,
+          },
+        });
+
+        const tokens = issueSessionTokens(user, session.id, data.activeRole);
+
+        await tx.userSession.update({
+          where: { id: session.id },
+          data: { refreshTokenHash: hashSha256(tokens.refreshToken) },
+        });
+
+        return { session, tokens };
       },
-    });
+      { maxWait: 10000, timeout: 15000 }
+    );
   }
 
   async findSessionById(sessionId) {
@@ -289,132 +341,436 @@ export class AuthRepository {
   }
 
   async revokeSession(sessionId) {
-    return prisma.userSession.update({
-      where: { id: sessionId },
+    return prisma.userSession.updateMany({
+      where: { id: sessionId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
   }
 
-  async updateSessionActiveRole(sessionId, activeRole) {
-    return prisma.userSession.update({
-      where: { id: sessionId },
-      data: { activeRole },
+  async switchSessionRoleAndRotateTokens(sessionId, user, targetRole, newExpiresAt, issueSessionTokens) {
+    return prisma.$transaction(
+      async (tx) => {
+        const tokens = issueSessionTokens(user, sessionId, targetRole);
+        await tx.userSession.update({
+          where: { id: sessionId },
+          data: {
+            activeRole: targetRole,
+            refreshTokenHash: hashSha256(tokens.refreshToken),
+            expiresAt: newExpiresAt,
+          },
+        });
+        return tokens;
+      },
+      { maxWait: 10000, timeout: 15000 }
+    );
+  }
+
+  async ensureFarmerRole(tx, userId) {
+    return tx.userRole.upsert({
+      where: {
+        userId_role: {
+          userId,
+          role: 'FARMER',
+        },
+      },
+      create: {
+        userId,
+        role: 'FARMER',
+      },
+      update: {},
     });
   }
 
-  async onboardFarmer(userId, farmerData, sessionId = null) {
-    return prisma.$transaction(async (tx) => {
-      const existingRole = await tx.userRole.findUnique({
-        where: {
-          userId_role: {
-            userId,
-            role: 'FARMER',
-          },
-        },
-      });
+  async saveFarmerIdentityStep(userId, payload) {
+    return prisma.$transaction(
+      async (tx) => {
+        await this.ensureFarmerRole(tx, userId);
 
-      if (!existingRole) {
-        await tx.userRole.create({
+        await tx.user.update({
+          where: { id: userId },
           data: {
-            userId,
-            role: 'FARMER',
+            name: payload.fullName,
+            ...(payload.profilePhotoKey !== undefined && {
+              avatarKey: payload.profilePhotoKey,
+            }),
           },
         });
-      }
 
-      const farmerProfile = await tx.farmerProfile.upsert({
-        where: { userId },
-        create: {
-          userId,
-          fatherName: farmerData.fatherName || null,
-          village: farmerData.village,
-          tehsilOrBlock: farmerData.tehsilOrBlock,
-          district: farmerData.district,
-          state: farmerData.state,
-          pinCode: farmerData.pinCode,
-          landAreaAcres: farmerData.landAreaAcres || null,
-        },
-        update: {
-          fatherName: farmerData.fatherName || null,
-          village: farmerData.village,
-          tehsilOrBlock: farmerData.tehsilOrBlock,
-          district: farmerData.district,
-          state: farmerData.state,
-          pinCode: farmerData.pinCode,
-          landAreaAcres: farmerData.landAreaAcres || null,
-        },
-      });
-
-      if (sessionId) {
-        await tx.userSession.update({
-          where: { id: sessionId },
-          data: { activeRole: 'FARMER' },
+        const existingProfile = await tx.farmerProfile.findUnique({
+          where: { userId },
         });
-      }
 
-      const updatedUser = await tx.user.findUnique({
-        where: { id: userId },
-        relationLoadStrategy: 'join',
-        include: {
-          roles: true,
-          staffAssignments: { where: { isActive: true } },
-          buyerProfile: true,
-          farmerProfile: true,
-        },
+        const nextStep =
+          existingProfile &&
+          (existingProfile.onboardingStep === 'LOCATION' ||
+            existingProfile.onboardingStep === 'COMPLETED')
+            ? existingProfile.onboardingStep
+            : 'IDENTITY';
+
+        await tx.farmerProfile.upsert({
+          where: { userId },
+          create: {
+            userId,
+            fatherName: payload.fatherOrSpouseName || null,
+            onboardingStep: nextStep,
+          },
+          update: {
+            ...(payload.fatherOrSpouseName !== undefined && {
+              fatherName: payload.fatherOrSpouseName || null,
+            }),
+            onboardingStep: nextStep,
+          },
+        });
+
+        const existingAadhaarDoc = await tx.userDocument.findFirst({
+          where: { userId, docType: 'AADHAAR' },
+          orderBy: { updatedAt: 'desc' },
+        });
+
+        const docData = {
+          docNumber: payload.maskedAadhaar,
+          ...(payload.aadhaarDocumentKey !== undefined && {
+            r2PrivateKey: payload.aadhaarDocumentKey,
+          }),
+          status: 'PENDING',
+          providerMetadata: {
+            verificationMethod: payload.verificationMethod,
+            digiLockerReferenceId: payload.digiLockerReferenceId || null,
+            submittedAt: new Date().toISOString(),
+          },
+          metadata: {
+            aadhaarLast4: payload.aadhaarLast4,
+            aadhaarHash: payload.aadhaarHash,
+            consentAcceptedAt: new Date().toISOString(),
+          },
+        };
+
+        if (existingAadhaarDoc) {
+          await tx.userDocument.update({
+            where: { id: existingAadhaarDoc.id },
+            data: docData,
+          });
+        } else {
+          await tx.userDocument.create({
+            data: {
+              userId,
+              docType: 'AADHAAR',
+              r2PrivateKey: payload.aadhaarDocumentKey || null,
+              ...docData,
+            },
+          });
+        }
+
+        return this.findUserById(userId, tx);
+      },
+      { maxWait: 10000, timeout: 30000 }
+    );
+  }
+
+  async saveFarmerLocationStep(userId, payload) {
+    return prisma.$transaction(
+      async (tx) => {
+        await this.ensureFarmerRole(tx, userId);
+
+        const existingUser = await tx.user.findUnique({
+          where: { id: userId },
+          select: { name: true, phone: true, email: true },
+        });
+
+        const existingProfile = await tx.farmerProfile.findUnique({
+          where: { userId },
+        });
+
+        const nextStep =
+          existingProfile?.onboardingStep === 'COMPLETED' ? 'COMPLETED' : 'LOCATION';
+
+        await tx.farmerProfile.upsert({
+          where: { userId },
+          create: {
+            userId,
+            state: payload.state,
+            district: payload.district,
+            tehsilOrBlock: payload.tehsilOrBlock,
+            village: payload.village,
+            pinCode: payload.pinCode,
+            landSizeRange: payload.landSizeRange || null,
+            landAreaAcres: payload.landAreaAcres,
+            primaryProduce: payload.primaryProduce,
+            onboardingStep: nextStep,
+          },
+          update: {
+            state: payload.state,
+            district: payload.district,
+            tehsilOrBlock: payload.tehsilOrBlock,
+            village: payload.village,
+            pinCode: payload.pinCode,
+            landSizeRange: payload.landSizeRange || null,
+            landAreaAcres: payload.landAreaAcres,
+            primaryProduce: payload.primaryProduce,
+            onboardingStep: nextStep,
+          },
+        });
+
+        const existingFarmAddress = await tx.address.findFirst({
+          where: { userId, label: 'FARM' },
+          orderBy: { updatedAt: 'desc' },
+        });
+
+        const addressData = {
+          isDefault: true,
+          contactName: existingUser?.name || 'Farmer',
+          contactPhone: existingUser?.phone || existingUser?.email || '',
+          addressLine1: `${payload.village}, ${payload.tehsilOrBlock}`,
+          tehsilOrBlock: payload.tehsilOrBlock,
+          cityOrTown: payload.village,
+          district: payload.district,
+          state: payload.state,
+          pinCode: payload.pinCode,
+          country: 'IN',
+          latitude: payload.latitude ?? null,
+          longitude: payload.longitude ?? null,
+          metadata: {
+            gpsAccuracyMeters: payload.gpsAccuracyMeters ?? null,
+          },
+        };
+
+        const farmAddress = existingFarmAddress
+          ? await tx.address.update({
+              where: { id: existingFarmAddress.id },
+              data: addressData,
+            })
+          : await tx.address.create({
+              data: {
+                userId,
+                label: 'FARM',
+                ...addressData,
+              },
+            });
+
+        if (payload.latitude != null && payload.longitude != null) {
+          await tx.$executeRaw`
+            UPDATE "Address"
+            SET location = ST_SetSRID(ST_MakePoint(${payload.longitude}, ${payload.latitude}), 4326)::geography
+            WHERE id = ${farmAddress.id}
+          `;
+        }
+
+        return this.findUserById(userId, tx);
+      },
+      { maxWait: 10000, timeout: 30000 }
+    );
+  }
+
+  async upsertUserPayoutAccount(tx, userId, payoutData, setAsDefault = true) {
+    if (setAsDefault) {
+      await tx.bankAccount.updateMany({
+        where: { userId, isDefault: true },
+        data: { isDefault: false },
       });
+    }
 
-      return { user: updatedUser, farmerProfile };
-    }, { maxWait: 10000, timeout: 30000 });
+    const matchWhere =
+      payoutData.payoutChannel === 'BANK'
+        ? {
+            userId,
+            payoutChannel: 'BANK',
+            accountNumber: payoutData.accountNumber,
+            ifscCode: payoutData.ifscCode,
+          }
+        : {
+            userId,
+            payoutChannel: 'UPI',
+            upiVpa: payoutData.upiVpa,
+          };
+
+    const existing = await tx.bankAccount.findFirst({ where: matchWhere });
+
+    const recordData = {
+      payoutChannel: payoutData.payoutChannel,
+      accountHolderName: payoutData.accountHolderName,
+      accountNumber: payoutData.payoutChannel === 'BANK' ? payoutData.accountNumber : null,
+      ifscCode: payoutData.payoutChannel === 'BANK' ? payoutData.ifscCode : null,
+      bankName: payoutData.payoutChannel === 'BANK' ? payoutData.bankName || null : null,
+      branchName: payoutData.payoutChannel === 'BANK' ? payoutData.branchName || null : null,
+      upiVpa: payoutData.payoutChannel === 'UPI' ? payoutData.upiVpa : null,
+      isDefault: setAsDefault,
+      metadata: payoutData.metadata || null,
+    };
+
+    if (existing) {
+      return tx.bankAccount.update({
+        where: { id: existing.id },
+        data: recordData,
+      });
+    }
+
+    return tx.bankAccount.create({
+      data: {
+        userId,
+        ...recordData,
+      },
+    });
+  }
+
+  async saveFarmerPayoutStep(userId, sessionId, payoutData, newExpiresAt, issueSessionTokens) {
+    return prisma.$transaction(
+      async (tx) => {
+        await this.ensureFarmerRole(tx, userId);
+
+        const defaultBankAccount = await this.upsertUserPayoutAccount(
+          tx,
+          userId,
+          payoutData,
+          true
+        );
+
+        const existingProfile = await tx.farmerProfile.findUnique({
+          where: { userId },
+          select: { metadata: true },
+        });
+        const mergedMetadata =
+          existingProfile?.metadata && typeof existingProfile.metadata === 'object'
+            ? { ...existingProfile.metadata, onboardingCompletedAt: new Date().toISOString() }
+            : { onboardingCompletedAt: new Date().toISOString() };
+
+        await tx.farmerProfile.update({
+          where: { userId },
+          data: {
+            onboardingStep: 'COMPLETED',
+            metadata: mergedMetadata,
+          },
+        });
+
+        const updatedUser = await this.findUserById(userId, tx);
+        let tokens = null;
+
+        if (sessionId) {
+          tokens = issueSessionTokens(updatedUser, sessionId, 'FARMER');
+          await tx.userSession.update({
+            where: { id: sessionId },
+            data: {
+              activeRole: 'FARMER',
+              refreshTokenHash: hashSha256(tokens.refreshToken),
+              expiresAt: newExpiresAt,
+            },
+          });
+        }
+
+        return { user: updatedUser, defaultBankAccount, tokens };
+      },
+      { maxWait: 10000, timeout: 30000 }
+    );
+  }
+
+  async onboardFarmer(userId, farmerData, sessionId, newExpiresAt, issueSessionTokens) {
+    return prisma.$transaction(
+      async (tx) => {
+        await this.ensureFarmerRole(tx, userId);
+
+        const farmerProfile = await tx.farmerProfile.upsert({
+          where: { userId },
+          create: {
+            userId,
+            fatherName: farmerData.fatherName || null,
+            village: farmerData.village,
+            tehsilOrBlock: farmerData.tehsilOrBlock,
+            district: farmerData.district,
+            state: farmerData.state,
+            pinCode: farmerData.pinCode,
+            landSizeRange: farmerData.landSizeRange || null,
+            landAreaAcres: farmerData.landAreaAcres || null,
+            primaryProduce: farmerData.primaryProduce || [],
+            onboardingStep: 'LOCATION',
+          },
+          update: {
+            fatherName: farmerData.fatherName || null,
+            village: farmerData.village,
+            tehsilOrBlock: farmerData.tehsilOrBlock,
+            district: farmerData.district,
+            state: farmerData.state,
+            pinCode: farmerData.pinCode,
+            ...(farmerData.landSizeRange !== undefined && {
+              landSizeRange: farmerData.landSizeRange || null,
+            }),
+            landAreaAcres: farmerData.landAreaAcres || null,
+            ...(farmerData.primaryProduce !== undefined && {
+              primaryProduce: farmerData.primaryProduce,
+            }),
+          },
+        });
+
+        const updatedUser = await this.findUserById(userId, tx);
+        let tokens = null;
+
+        if (sessionId) {
+          tokens = issueSessionTokens(updatedUser, sessionId, 'FARMER');
+          await tx.userSession.update({
+            where: { id: sessionId },
+            data: {
+              activeRole: 'FARMER',
+              refreshTokenHash: hashSha256(tokens.refreshToken),
+              expiresAt: newExpiresAt,
+            },
+          });
+        }
+
+        return { user: updatedUser, farmerProfile, tokens };
+      },
+      { maxWait: 10000, timeout: 30000 }
+    );
   }
 
   async verifySecondaryIdentifier(userId, identifier, channel) {
-    return prisma.$transaction(async (tx) => {
-      if (channel === 'EMAIL') {
-        const existing = await tx.user.findFirst({
-          where: { email: identifier, emailVerifiedAt: { not: null } },
-        });
-        if (existing && existing.id !== userId) {
-          throw new Error('EMAIL_ALREADY_VERIFIED');
+    return prisma.$transaction(
+      async (tx) => {
+        if (channel === 'EMAIL') {
+          const existing = await tx.user.findFirst({
+            where: { email: identifier, emailVerifiedAt: { not: null } },
+          });
+          if (existing && existing.id !== userId) {
+            throw new Error('EMAIL_ALREADY_VERIFIED');
+          }
+
+          await tx.user.updateMany({
+            where: { email: identifier, emailVerifiedAt: null },
+            data: { email: null },
+          });
+
+          return tx.user.update({
+            where: { id: userId },
+            data: {
+              email: identifier,
+              emailVerifiedAt: new Date(),
+            },
+          });
         }
 
-        await tx.user.updateMany({
-          where: { email: identifier, emailVerifiedAt: null },
-          data: { email: null },
-        });
+        if (channel === 'SMS') {
+          const existing = await tx.user.findFirst({
+            where: { phone: identifier, phoneVerifiedAt: { not: null } },
+          });
+          if (existing && existing.id !== userId) {
+            throw new Error('PHONE_ALREADY_VERIFIED');
+          }
 
-        return tx.user.update({
-          where: { id: userId },
-          data: {
-            email: identifier,
-            emailVerifiedAt: new Date(),
-          },
-        });
-      }
+          await tx.user.updateMany({
+            where: { phone: identifier, phoneVerifiedAt: null },
+            data: { phone: null },
+          });
 
-      if (channel === 'SMS') {
-        const existing = await tx.user.findFirst({
-          where: { phone: identifier, phoneVerifiedAt: { not: null } },
-        });
-        if (existing && existing.id !== userId) {
-          throw new Error('PHONE_ALREADY_VERIFIED');
+          return tx.user.update({
+            where: { id: userId },
+            data: {
+              phone: identifier,
+              phoneVerifiedAt: new Date(),
+            },
+          });
         }
 
-        await tx.user.updateMany({
-          where: { phone: identifier, phoneVerifiedAt: null },
-          data: { phone: null },
-        });
-
-        return tx.user.update({
-          where: { id: userId },
-          data: {
-            phone: identifier,
-            phoneVerifiedAt: new Date(),
-          },
-        });
-      }
-
-      throw new Error('INVALID_CHANNEL');
-    }, { maxWait: 10000, timeout: 30000 });
+        throw new Error('INVALID_CHANNEL');
+      },
+      { maxWait: 10000, timeout: 30000 }
+    );
   }
 }
 

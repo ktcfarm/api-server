@@ -1,5 +1,5 @@
+import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { env } from '../../core/config/env.js';
 import {
@@ -10,11 +10,25 @@ import {
   TooManyRequestsError,
   UnauthorizedError,
 } from '../../core/errors/app.error.js';
+import { invalidateAuthCache } from '../../core/middleware/auth.middleware.js';
 import { EmailOtpChannel } from '../../core/strategies/otp/email-otp.channel.js';
 import { InAppNotificationOtpChannel } from '../../core/strategies/otp/in-app-otp.channel.js';
 import { SmsOtpChannel } from '../../core/strategies/otp/sms-otp.channel.js';
-import { invalidateAuthCache } from '../../core/middleware/auth.middleware.js';
 import { authRepository } from './auth.repository.js';
+import {
+  computeFarmerOnboardingState,
+  formatAadhaarDocument,
+  formatBankAccount,
+  formatDeliveryAddress,
+  formatUserPreferences,
+  hashSha256,
+  mapLandSizeToAcres,
+  maskAadhaar,
+  normalizeEmail,
+  normalizeIdentifier,
+} from './auth.utils.js';
+
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export class AuthService {
   constructor() {
@@ -23,6 +37,7 @@ export class AuthService {
       ['SMS', new SmsOtpChannel()],
       ['IN_APP', new InAppNotificationOtpChannel()],
     ]);
+    this.issueTokensBound = this.generateTokens.bind(this);
   }
 
   generateNumericOtp(length = 6) {
@@ -32,7 +47,7 @@ export class AuthService {
   }
 
   hashValue(val) {
-    return crypto.createHash('sha256').update(val).digest('hex');
+    return hashSha256(val);
   }
 
   generateTokens(user, sessionId, activeRole) {
@@ -59,8 +74,25 @@ export class AuthService {
   }
 
   sanitizeUser(user) {
-    const { pinHash, ...sanitized } = user;
-    return sanitized;
+    if (!user) return null;
+    const { pinHash, bankAccounts, documents, addresses, ...rest } = user;
+    const aadhaarDoc = Array.isArray(documents)
+      ? documents.find((d) => d.docType === 'AADHAAR') || null
+      : null;
+    const allAddresses = Array.isArray(addresses) ? addresses : [];
+    const farmAddress = allAddresses.find((a) => a.label === 'FARM') || null;
+    const deliveryAddresses = allAddresses
+      .filter((a) => a.label !== 'FARM')
+      .map(formatDeliveryAddress);
+
+    return {
+      ...rest,
+      preferences: formatUserPreferences(user.preferences),
+      aadhaarDocument: formatAadhaarDocument(aadhaarDoc),
+      farmAddress,
+      deliveryAddresses,
+      bankAccounts: Array.isArray(bankAccounts) ? bankAccounts.map(formatBankAccount) : [],
+    };
   }
 
   formatStaffAssignments(staffAssignments = []) {
@@ -73,20 +105,86 @@ export class AuthService {
     }));
   }
 
+  async _finalizeRoleLogin(user, targetRole, clientInfo = {}) {
+    const userRoles = user.roles.map((r) => r.role);
+
+    if (targetRole === 'FARMER' && !userRoles.includes('FARMER')) {
+      if (userRoles.includes('BUYER')) {
+        return {
+          requiresFarmerOnboarding: true,
+          message: 'Farmer registration required before entering Farmer mode.',
+          userId: user.id,
+        };
+      }
+    }
+
+    if (!userRoles.includes(targetRole)) {
+      throw new ForbiddenError(`User is not authorized for role ${targetRole}`);
+    }
+
+    if (targetRole === 'STORE_OPERATOR' || targetRole === 'HUB_MANAGER') {
+      const hasActiveAssignment = user.staffAssignments.some(
+        (s) => s.role === targetRole && s.isActive
+      );
+      if (!hasActiveAssignment) {
+        throw new ForbiddenError(`User does not have an active ${targetRole} hub assignment.`);
+      }
+    }
+
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+    const { tokens } = await authRepository.createSessionWithTokens(
+      {
+        userId: user.id,
+        activeRole: targetRole,
+        deviceInfo: clientInfo.deviceInfo,
+        ipAddress: clientInfo.ipAddress,
+        expiresAt,
+      },
+      this.issueTokensBound,
+      user
+    );
+
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      activeRole: targetRole,
+      roles: userRoles,
+      staffAssignments: this.formatStaffAssignments(user.staffAssignments),
+      user: this.sanitizeUser(user),
+      farmerOnboarding: computeFarmerOnboardingState(user),
+    };
+  }
+
   async sendOtp(identifier, channel, purpose, metadata = null) {
     const otpChannel = this.otpChannels.get(channel);
     if (!otpChannel) {
       throw new BadRequestError(`Unsupported OTP channel: ${channel}`);
     }
 
+    const normalizedIdentifier = normalizeIdentifier(identifier, channel);
+
+    if (purpose === 'REGISTER' && (channel === 'EMAIL' || channel === 'SMS')) {
+      const existing = await authRepository.findVerifiedUserByChannel(
+        normalizedIdentifier,
+        channel
+      );
+      if (existing) {
+        throw new ConflictError(
+          channel === 'EMAIL'
+            ? 'This email is already registered and verified.'
+            : 'This phone number is already registered and verified.'
+        );
+      }
+    }
+
     const otp = this.generateNumericOtp(6);
     const otpHash = await bcrypt.hash(otp, env.BCRYPT_SALT_ROUNDS);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    await authRepository.invalidateOtps(identifier, purpose);
+    await authRepository.invalidateOtps(normalizedIdentifier, purpose);
 
     await authRepository.createOtp({
-      identifier,
+      identifier: normalizedIdentifier,
       channel,
       purpose,
       otpHash,
@@ -95,7 +193,7 @@ export class AuthService {
     });
 
     const dispatchResult = await otpChannel.sendOtp({
-      recipient: identifier,
+      recipient: normalizedIdentifier,
       otp,
       purpose,
       expiresAt,
@@ -135,31 +233,42 @@ export class AuthService {
   }
 
   async register(params, clientInfo = {}) {
-    const { email, otp, name, pin, phone, intendedRole, farmerDetails } = params;
+    const {
+      otp,
+      name,
+      pin,
+      phone,
+      languagePref,
+      intendedRole,
+      farmerDetails,
+    } = params;
+    const email = normalizeEmail(params.email);
 
     await this.verifyOtpCode(email, 'REGISTER', otp);
 
     const pinHash = await bcrypt.hash(pin, env.BCRYPT_SALT_ROUNDS);
-    const rawRefresh = crypto.randomBytes(32).toString('hex');
-    const refreshTokenHash = this.hashValue(rawRefresh);
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
 
     let registered;
     try {
-      registered = await authRepository.registerUserWithProfiles({
-        email,
-        phone,
-        name,
-        pinHash,
-        intendedRole,
-        farmerDetails,
-        sessionData: {
-          refreshTokenHash,
-          deviceInfo: clientInfo.deviceInfo,
-          ipAddress: clientInfo.ipAddress,
-          expiresAt,
+      registered = await authRepository.registerUserWithProfiles(
+        {
+          email,
+          phone,
+          name,
+          pinHash,
+          languagePref,
+          termsAcceptedAt: new Date(),
+          intendedRole,
+          farmerDetails,
+          sessionData: {
+            deviceInfo: clientInfo.deviceInfo,
+            ipAddress: clientInfo.ipAddress,
+            expiresAt,
+          },
         },
-      });
+        this.issueTokensBound
+      );
     } catch (err) {
       if (err.message === 'EMAIL_ALREADY_VERIFIED') {
         throw new ConflictError('This email is already registered and verified.');
@@ -170,14 +279,16 @@ export class AuthService {
       throw err;
     }
 
-    const { user, session } = registered;
-    const tokens = this.generateTokens(user, session.id, intendedRole);
+    const { user, tokens } = registered;
 
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       activeRole: intendedRole,
+      roles: user.roles.map((r) => r.role),
+      staffAssignments: this.formatStaffAssignments(user.staffAssignments),
       user: this.sanitizeUser(user),
+      farmerOnboarding: computeFarmerOnboardingState(user),
     };
   }
 
@@ -212,55 +323,7 @@ export class AuthService {
     }
 
     await authRepository.resetPinAttempts(user.id);
-
-    const userRoles = user.roles.map((r) => r.role);
-
-    if (targetRole === 'FARMER' && !userRoles.includes('FARMER')) {
-      if (userRoles.includes('BUYER')) {
-        return {
-          requiresFarmerOnboarding: true,
-          message: 'Farmer registration required before entering Farmer mode.',
-          userId: user.id,
-        };
-      }
-    }
-
-    if (!userRoles.includes(targetRole)) {
-      throw new ForbiddenError(`User is not authorized for role ${targetRole}`);
-    }
-
-    if (targetRole === 'STORE_OPERATOR' || targetRole === 'HUB_MANAGER') {
-      const hasActiveAssignment = user.staffAssignments.some(
-        (s) => s.role === targetRole && s.isActive
-      );
-      if (!hasActiveAssignment) {
-        throw new ForbiddenError(`User does not have an active ${targetRole} hub assignment.`);
-      }
-    }
-
-    const rawRefresh = crypto.randomBytes(32).toString('hex');
-    const refreshTokenHash = this.hashValue(rawRefresh);
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-    const session = await authRepository.createSession({
-      userId: user.id,
-      refreshTokenHash,
-      activeRole: targetRole,
-      deviceInfo: clientInfo.deviceInfo,
-      ipAddress: clientInfo.ipAddress,
-      expiresAt,
-    });
-
-    const tokens = this.generateTokens(user, session.id, targetRole);
-
-    return {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      activeRole: targetRole,
-      roles: userRoles,
-      staffAssignments: this.formatStaffAssignments(user.staffAssignments),
-      user: this.sanitizeUser(user),
-    };
+    return this._finalizeRoleLogin(user, targetRole, clientInfo);
   }
 
   async loginWithOtp(identifier, otp, targetRole, clientInfo = {}) {
@@ -271,53 +334,142 @@ export class AuthService {
       throw new NotFoundError('No verified account found for this identifier. Please register first.');
     }
 
-    const userRoles = user.roles.map((r) => r.role);
+    return this._finalizeRoleLogin(user, targetRole, clientInfo);
+  }
 
-    if (targetRole === 'FARMER' && !userRoles.includes('FARMER')) {
-      if (userRoles.includes('BUYER')) {
-        return {
-          requiresFarmerOnboarding: true,
-          message: 'Farmer registration required before entering Farmer mode.',
-          userId: user.id,
-        };
-      }
+  async getFarmerOnboardingStatus(userId) {
+    const user = await authRepository.findUserById(userId);
+    if (!user) {
+      throw new NotFoundError('User not found');
     }
-
-    if (!userRoles.includes(targetRole)) {
-      throw new ForbiddenError(`User is not authorized for role ${targetRole}`);
-    }
-
-    if (targetRole === 'STORE_OPERATOR' || targetRole === 'HUB_MANAGER') {
-      const hasActiveAssignment = user.staffAssignments.some(
-        (s) => s.role === targetRole && s.isActive
-      );
-      if (!hasActiveAssignment) {
-        throw new ForbiddenError(`User does not have an active ${targetRole} hub assignment.`);
-      }
-    }
-
-    const rawRefresh = crypto.randomBytes(32).toString('hex');
-    const refreshTokenHash = this.hashValue(rawRefresh);
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-    const session = await authRepository.createSession({
-      userId: user.id,
-      refreshTokenHash,
-      activeRole: targetRole,
-      deviceInfo: clientInfo.deviceInfo,
-      ipAddress: clientInfo.ipAddress,
-      expiresAt,
-    });
-
-    const tokens = this.generateTokens(user, session.id, targetRole);
 
     return {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      activeRole: targetRole,
-      roles: userRoles,
-      staffAssignments: this.formatStaffAssignments(user.staffAssignments),
       user: this.sanitizeUser(user),
+      farmerProfile: user.farmerProfile,
+      farmerOnboarding: computeFarmerOnboardingState(user),
+    };
+  }
+
+  async saveFarmerIdentityStep(userId, sessionId, payload) {
+    const existing = await authRepository.findUserById(userId);
+    if (!existing) {
+      throw new NotFoundError('User not found');
+    }
+
+    const aadhaarInfo = maskAadhaar(payload.aadhaarNumber);
+
+    const updatedUser = await authRepository.saveFarmerIdentityStep(userId, {
+      fullName: payload.fullName,
+      fatherOrSpouseName: payload.fatherOrSpouseName,
+      maskedAadhaar: aadhaarInfo.masked,
+      aadhaarLast4: aadhaarInfo.last4,
+      aadhaarHash: aadhaarInfo.hash,
+      verificationMethod: payload.verificationMethod,
+      profilePhotoKey: payload.profilePhotoKey,
+      aadhaarDocumentKey: payload.aadhaarDocumentKey,
+      digiLockerReferenceId: payload.digiLockerReferenceId,
+    });
+
+    if (sessionId) {
+      invalidateAuthCache(sessionId);
+    }
+
+    return {
+      user: this.sanitizeUser(updatedUser),
+      farmerProfile: updatedUser.farmerProfile,
+      aadhaarDocument: formatAadhaarDocument(updatedUser.documents?.[0] || null),
+      farmerOnboarding: computeFarmerOnboardingState(updatedUser),
+    };
+  }
+
+  async saveFarmerLocationStep(userId, sessionId, payload) {
+    const existing = await authRepository.findUserById(userId);
+    if (!existing) {
+      throw new NotFoundError('User not found');
+    }
+
+    const mappedAcres = mapLandSizeToAcres(payload.landSizeRange, payload.landAreaAcres);
+
+    const updatedUser = await authRepository.saveFarmerLocationStep(userId, {
+      state: payload.state,
+      district: payload.district,
+      tehsilOrBlock: payload.tehsilOrBlock,
+      village: payload.village,
+      pinCode: payload.pinCode,
+      landSizeRange: payload.landSizeRange,
+      landAreaAcres: mappedAcres,
+      primaryProduce: payload.primaryProduce,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
+      gpsAccuracyMeters: payload.gpsAccuracyMeters,
+    });
+
+    if (sessionId) {
+      invalidateAuthCache(sessionId);
+    }
+
+    const sanitized = this.sanitizeUser(updatedUser);
+
+    return {
+      user: sanitized,
+      farmerProfile: updatedUser.farmerProfile,
+      farmAddress: sanitized.farmAddress,
+      farmerOnboarding: computeFarmerOnboardingState(updatedUser),
+    };
+  }
+
+  async saveFarmerPayoutStep(userId, sessionId, payload) {
+    const existing = await authRepository.findUserById(userId);
+    if (!existing) {
+      throw new NotFoundError('User not found');
+    }
+
+    const currentState = computeFarmerOnboardingState(existing);
+    if (!currentState.steps.locationCompleted) {
+      throw new BadRequestError(
+        'Please complete Identity and Farm Location details before saving payout information.'
+      );
+    }
+
+    const accountHolderName = payload.accountHolderName || existing.name || 'Farmer';
+    const newExpiresAt = new Date(Date.now() + SESSION_TTL_MS);
+
+    const { user: updatedUser, defaultBankAccount, tokens } =
+      await authRepository.saveFarmerPayoutStep(
+        userId,
+        sessionId,
+        {
+          payoutChannel: payload.payoutChannel,
+          accountHolderName,
+          accountNumber: payload.accountNumber,
+          ifscCode: payload.ifscCode,
+          bankName: payload.bankName,
+          branchName: payload.branchName,
+          upiVpa: payload.upiVpa,
+          metadata: {
+            consentAcceptedAt: new Date().toISOString(),
+            source: 'FARMER_EKYC_STEP_3',
+          },
+        },
+        newExpiresAt,
+        this.issueTokensBound
+      );
+
+    if (sessionId) {
+      invalidateAuthCache(sessionId);
+    }
+
+    return {
+      ...(tokens && {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      }),
+      activeRole: 'FARMER',
+      roles: updatedUser.roles.map((r) => r.role),
+      user: this.sanitizeUser(updatedUser),
+      farmerProfile: updatedUser.farmerProfile,
+      defaultBankAccount: formatBankAccount(defaultBankAccount),
+      farmerOnboarding: computeFarmerOnboardingState(updatedUser),
     };
   }
 
@@ -327,20 +479,34 @@ export class AuthService {
       throw new NotFoundError('User not found');
     }
 
-    const { user: updatedUser, farmerProfile } = await authRepository.onboardFarmer(
+    const mappedAcres = mapLandSizeToAcres(farmerData.landSizeRange, farmerData.landAreaAcres);
+    const newExpiresAt = new Date(Date.now() + SESSION_TTL_MS);
+
+    const { user: updatedUser, farmerProfile, tokens } = await authRepository.onboardFarmer(
       userId,
-      farmerData,
-      sessionId
+      {
+        ...farmerData,
+        landAreaAcres: mappedAcres,
+      },
+      sessionId,
+      newExpiresAt,
+      this.issueTokensBound
     );
 
-    const tokens = this.generateTokens(updatedUser, sessionId, 'FARMER');
+    if (sessionId) {
+      invalidateAuthCache(sessionId);
+    }
 
     return {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
+      ...(tokens && {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      }),
       activeRole: 'FARMER',
+      roles: updatedUser.roles.map((r) => r.role),
       user: this.sanitizeUser(updatedUser),
       farmerProfile,
+      farmerOnboarding: computeFarmerOnboardingState(updatedUser),
     };
   }
 
@@ -374,18 +540,25 @@ export class AuthService {
       throw new UnauthorizedError('Session has expired or was revoked. Please log in again.');
     }
 
+    if (hashSha256(refreshTokenStr) !== session.refreshTokenHash) {
+      await authRepository.revokeSession(session.id);
+      invalidateAuthCache(session.id);
+      throw new UnauthorizedError('Refresh token has been rotated or revoked. Please log in again.');
+    }
+
     const user = await authRepository.findUserById(session.userId);
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedError('User account is inactive or not found');
     }
 
-    const newRawRefresh = crypto.randomBytes(32).toString('hex');
-    const newRefreshTokenHash = this.hashValue(newRawRefresh);
-    const newExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-    await authRepository.rotateSessionRefreshToken(session.id, newRefreshTokenHash, newExpiresAt);
-
     const tokens = this.generateTokens(user, session.id, session.activeRole);
+    const newExpiresAt = new Date(Date.now() + SESSION_TTL_MS);
+
+    await authRepository.rotateSessionRefreshToken(
+      session.id,
+      hashSha256(tokens.refreshToken),
+      newExpiresAt
+    );
 
     return {
       accessToken: tokens.accessToken,
@@ -406,13 +579,14 @@ export class AuthService {
   }
 
   async verifyIdentifier(userId, identifier, channel, otp) {
+    const normalizedIdentifier = normalizeIdentifier(identifier, channel);
     const purpose = channel === 'EMAIL' ? 'VERIFY_EMAIL' : 'VERIFY_PHONE';
-    await this.verifyOtpCode(identifier, purpose, otp);
+    await this.verifyOtpCode(normalizedIdentifier, purpose, otp);
 
     try {
       const updatedUser = await authRepository.verifySecondaryIdentifier(
         userId,
-        identifier,
+        normalizedIdentifier,
         channel
       );
       return {
@@ -445,6 +619,7 @@ export class AuthService {
       staffAssignments: this.formatStaffAssignments(user.staffAssignments),
       buyerProfile: user.buyerProfile,
       farmerProfile: user.farmerProfile,
+      farmerOnboarding: computeFarmerOnboardingState(user),
     };
   }
 
@@ -458,6 +633,9 @@ export class AuthService {
     const isSuperAdmin = userRoles.includes('SUPER_ADMIN');
 
     if (!isSuperAdmin && !userRoles.includes(targetRole)) {
+      if (targetRole === 'FARMER') {
+        throw new ForbiddenError('Farmer onboarding is required before entering Farmer mode.');
+      }
       throw new ForbiddenError(`User is not authorized for role ${targetRole}`);
     }
 
@@ -480,20 +658,16 @@ export class AuthService {
       throw new UnauthorizedError('Session has expired or was revoked.');
     }
 
-    await authRepository.updateSessionActiveRole(session.id, targetRole);
-
-    const newRawRefresh = crypto.randomBytes(32).toString('hex');
-    const newRefreshTokenHash = this.hashValue(newRawRefresh);
-    const newExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    await authRepository.rotateSessionRefreshToken(
+    const newExpiresAt = new Date(Date.now() + SESSION_TTL_MS);
+    const tokens = await authRepository.switchSessionRoleAndRotateTokens(
       session.id,
-      newRefreshTokenHash,
-      newExpiresAt
+      user,
+      targetRole,
+      newExpiresAt,
+      this.issueTokensBound
     );
 
     invalidateAuthCache(session.id);
-
-    const tokens = this.generateTokens(user, session.id, targetRole);
 
     return {
       accessToken: tokens.accessToken,
@@ -502,6 +676,7 @@ export class AuthService {
       roles: userRoles,
       staffAssignments: this.formatStaffAssignments(user.staffAssignments),
       user: this.sanitizeUser(user),
+      farmerOnboarding: computeFarmerOnboardingState(user),
     };
   }
 }

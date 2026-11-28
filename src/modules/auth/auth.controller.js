@@ -2,16 +2,10 @@ import { authService } from './auth.service.js';
 
 export class AuthController {
   extractClientInfo(req) {
-    const userAgent = req.headers['user-agent'] || 'unknown';
-    const ipAddress =
-      req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-      req.socket.remoteAddress ||
-      'unknown';
-
     return {
-      ipAddress,
+      ipAddress: req.ip || req.headers['x-forwarded-for'] || null,
       deviceInfo: {
-        userAgent,
+        userAgent: req.headers['user-agent'] || 'unknown',
         platform: req.headers['x-client-platform'] || 'UNKNOWN',
         appVersion: req.headers['x-app-version'] || '1.0.0',
       },
@@ -75,6 +69,45 @@ export class AuthController {
         });
       }
 
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getFarmerOnboardingStatus(req, res, next) {
+    try {
+      const result = await authService.getFarmerOnboardingStatus(req.user.id);
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async saveFarmerIdentityStep(req, res, next) {
+    try {
+      const { id: userId, sessionId } = req.user;
+      const result = await authService.saveFarmerIdentityStep(userId, sessionId, req.body);
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async saveFarmerLocationStep(req, res, next) {
+    try {
+      const { id: userId, sessionId } = req.user;
+      const result = await authService.saveFarmerLocationStep(userId, sessionId, req.body);
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async saveFarmerPayoutStep(req, res, next) {
+    try {
+      const { id: userId, sessionId } = req.user;
+      const result = await authService.saveFarmerPayoutStep(userId, sessionId, req.body);
       res.status(200).json({ success: true, data: result });
     } catch (error) {
       next(error);

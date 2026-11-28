@@ -7,7 +7,10 @@ import {
 import { validate } from '../../core/middleware/validate.middleware.js';
 import { authController } from './auth.controller.js';
 import {
+  farmerIdentitySchema,
+  farmerLocationSchema,
   farmerOnboardingSchema,
+  farmerPayoutSchema,
   loginOtpSchema,
   loginPinSchema,
   refreshTokenSchema,
@@ -46,6 +49,33 @@ router.post(
   otpRateLimiter,
   validate(loginOtpSchema),
   authController.loginWithOtp.bind(authController)
+);
+
+router.get(
+  '/onboarding/farmer/status',
+  authMiddleware,
+  authController.getFarmerOnboardingStatus.bind(authController)
+);
+
+router.put(
+  '/onboarding/farmer/identity',
+  authMiddleware,
+  validate(farmerIdentitySchema),
+  authController.saveFarmerIdentityStep.bind(authController)
+);
+
+router.put(
+  '/onboarding/farmer/location',
+  authMiddleware,
+  validate(farmerLocationSchema),
+  authController.saveFarmerLocationStep.bind(authController)
+);
+
+router.put(
+  '/onboarding/farmer/payout',
+  authMiddleware,
+  validate(farmerPayoutSchema),
+  authController.saveFarmerPayoutStep.bind(authController)
 );
 
 router.post(

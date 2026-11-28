@@ -8,6 +8,7 @@ import {
   listHubsSchema,
   nearbyHubsSchema,
 } from '../modules/hubs/hubs.validation.js';
+import { profileRouter } from '../modules/profile/profile.routes.js';
 import { storageRouter } from '../modules/storage/storage.routes.js';
 
 export const appRouter = Router();
@@ -35,4 +36,5 @@ mobileHubRouter.get(
 
 appRouter.use('/auth', authRouter);
 appRouter.use('/hubs', mobileHubRouter);
+appRouter.use('/profile', profileRouter);
 appRouter.use('/storage', storageRouter);
